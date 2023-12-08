@@ -18,8 +18,11 @@ int main(int argc, char *argv[])
     	exit(-1);
      }
 
-
+    printf("Customer %d is waiting for %d seconds\n", cartID, waitTime);
     sleep(buyTime);
+
+    // access shared memory
+    
 
 
     int shmid;
@@ -36,7 +39,7 @@ int main(int argc, char *argv[])
         exit(2);
     }
 
-    
+
 
 
 
