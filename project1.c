@@ -142,14 +142,12 @@ int main(int argc, char *argv[])
         perror("shmptr -- parent -- attach");
         exit(2);
     }
+    
 
     // Copy the array of items to the struct memory
     memcpy(memory.items, items, sizeof(items));
 
-    //print the items
-    for (int i = 0; i < itemCount; i++) {
-        printf("%s %d %f\n", memory.items[i].name, memory.items[i].inventory, memory.items[i].price);
-    }
+    
     // copy the memory struct to the shared memory segment
     memcpy(shmptr, (char *) &memory, sizeof(memory));
  
@@ -167,11 +165,10 @@ int main(int argc, char *argv[])
       exit(4);
     }
 
+    /*
     // Forking and executing child processes
     for (int i = 0; i < NUM_CASHIERS; i++) {
 
-        struct CASHIER cashier;
-        cashier.behavior = CASHIER_BEHAVIOR;
         
 
         pid_t cash_pid = fork();
@@ -187,6 +184,7 @@ int main(int argc, char *argv[])
             exit(6);
         }
     }
+    */
 
 
     pid_t cust_spawner_pid = fork();
