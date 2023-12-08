@@ -19,6 +19,14 @@
 #define MAX_LINE_LENGTH 100
 #define MAX_ITEMS 1000
 #define MAX_CUSTOMERS 10000
+#define MAX_CASHIERS 100
+
+
+
+char* trim(char *str);
+
+int RandomNumberGen(int min_range, int max_range);
+
 
 struct Item {
     char name[50];
@@ -27,10 +35,7 @@ struct Item {
 };
 
 struct MEMORY {
-    struct Item items[MAX_ITEMS];
-    int numCashiersLeftSimulation; // Number of cashiers whose behavior dropped to 0
-    int numImpatientCustomers; // Number of customers who left without buying
-    float totalSupermarketIncome; 
+    struct Item items[MAX_ITEMS]; 
     int head, tail;
 };
 
@@ -43,8 +48,15 @@ struct SHOPPING_CART {
     struct String items[MAX_ITEMS][2];
 };
 
+struct CASHIER{
+    // add a queue of shopping carts
+    int behavior; 
+    struct SHOPPING_CART cartsQueue[MAX_CUSTOMERS];
+};
+
 struct ALL_SHOPPING_CARTS {
     struct SHOPPING_CART carts[MAX_CUSTOMERS];
+    struct CASHIER cashiers[MAX_CASHIERS];
     int head, tail;
 };
 

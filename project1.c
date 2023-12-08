@@ -9,26 +9,6 @@ Mahmoud Hamdan
 #include "local3.h"
 
 
-char* trim(char *str) {
-    while (*str && (*str == ' ' || *str == '\t' || *str == '\n')) {
-        str++;
-    }
-
-    int len = strlen(str);
-    while (len > 0 && (str[len - 1] == ' ' || str[len - 1] == '\t' || str[len - 1] == '\n')) {
-        len--;
-    }
-
-    str[len] = '\0';
-
-    return str;
-}
-
-int randomInRange(int min_range, int max_range) {
-    return (int) (min_range +  (rand() % (max_range - min_range)));
-}
-
-
 
 int main(int argc, char *argv[])
 {
@@ -40,11 +20,10 @@ int main(int argc, char *argv[])
     	exit(-1);
      }
     int CASHIER_THRESHOLD;
-  
+    int CASHIER_BEHAVIOR = 10;
     int MIN_SCAN_TIME;
     int MAX_SCAN_TIME;
     int NUM_CASHIERS;
-
     int MAX_CUSTOMER_PERSEC;
     int MIN_CUSTOMER_PERSEC;
     int MAX_BUY_TIME;
@@ -143,6 +122,7 @@ int main(int argc, char *argv[])
     // Close the file
     fclose(file2);
 
+
     pid_t pid = getpid();
     static struct  MEMORY memory;
     char *shmptr;
@@ -162,8 +142,18 @@ int main(int argc, char *argv[])
         perror("shmptr -- parent -- attach");
         exit(2);
     }
-    // Copy the array of items to the shared memory segment
+
+    // Copy the array of items to the struct memory
+    memcpy(memory.items, items, sizeof(items));
+
+    //print the items
+    for (int i = 0; i < itemCount; i++) {
+        printf("%s %d %f\n", memory.items[i].name, memory.items[i].inventory, memory.items[i].price);
+    }
+    // copy the memory struct to the shared memory segment
     memcpy(shmptr, (char *) &memory, sizeof(memory));
+ 
+
 
     semid = semget((int) pid, 2, IPC_CREAT | 0666);
     if ( semid == -1 ) {
@@ -180,6 +170,9 @@ int main(int argc, char *argv[])
     // Forking and executing child processes
     for (int i = 0; i < NUM_CASHIERS; i++) {
 
+        struct CASHIER cashier;
+        cashier.behavior = CASHIER_BEHAVIOR;
+        
 
         pid_t cash_pid = fork();
         if (cash_pid == -1) {
@@ -202,12 +195,13 @@ int main(int argc, char *argv[])
         exit(7);
     }
 
-    if (pid == 0) {
+    if (cust_spawner_pid == 0) {
         int cartID = 0;
         // Customer Spawning Child Process
         while (1) { // Replace with a suitable condition to stop spawning
-            int numOfCustomers = randomInRange(MIN_CUSTOMER_PERSEC, MAX_CUSTOMER_PERSEC);
-            sleep(1);
+            int delay = randomInRange(MIN_CUSTOMER_PERSEC, MAX_CUSTOMER_PERSEC);
+            int buyTime = randomInRange(MIN_BUY_TIME, MAX_BUY_TIME);
+            sleep(delay);
 
             pid_t customerPid = fork();
             if (customerPid == -1) {
@@ -216,8 +210,14 @@ int main(int argc, char *argv[])
             }
 
             if (customerPid == 0) {
+                char pidStr[10], cartIDStr[10], buyTimeStr[10], waitTimeStr[10];
+                sprintf(pidStr, "%d", (int)pid);
+                sprintf(cartIDStr, "%d", cartID);
+                sprintf(buyTimeStr, "%d", buyTime);
+                sprintf(waitTimeStr, "%d", WAIT_TIME);
+
                 // Customer Process
-                execl("./customer", "./customer", cartID, (char *)0);
+                execl("./customer", "./customer", pidStr, cartIDStr, buyTimeStr, waitTimeStr, (char *)0);
                 perror("execl -- customer -- failed");
                 exit(9);
             }
@@ -257,4 +257,24 @@ int main(int argc, char *argv[])
 
     return 0;
 
+}
+
+
+
+
+char* trim(char *str) {
+    while (*str && (*str == ' ' || *str == '\t' || *str == '\n')) {
+        str++;
+    }
+    int len = strlen(str);
+    while (len > 0 && (str[len - 1] == ' ' || str[len - 1] == '\t' || str[len - 1] == '\n')) {
+        len--;
+    }
+    str[len] = '\0';
+
+    return str;
+}
+
+int randomInRange(int min_range, int max_range) {
+    return (int) (min_range +  (rand() % (max_range - min_range)));
 }
