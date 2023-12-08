@@ -8,6 +8,22 @@ Mahmoud Hamdan
 
 #include "local3.h"
 
+char* trim(char *str) {
+    while (*str && (*str == ' ' || *str == '\t' || *str == '\n')) {
+        str++;
+    }
+    int len = strlen(str);
+    while (len > 0 && (str[len - 1] == ' ' || str[len - 1] == '\t' || str[len - 1] == '\n')) {
+        len--;
+    }
+    str[len] = '\0';
+
+    return str;
+}
+
+int randomInRange(int min_range, int max_range) {
+    return (int) (min_range +  (rand() % (max_range - min_range)));
+}
 
 
 int main(int argc, char *argv[])
@@ -57,7 +73,6 @@ int main(int argc, char *argv[])
         // Assign values based on variable name
         if (strstr(valueStr, ",") != NULL) {
             // If the value is a range, convert it to two integers
-            int min, max;
             sscanf(valueStr, "%d,%d", &min, &max);
         } else {
             // If the value is a single number, convert it to an integer
@@ -128,8 +143,10 @@ int main(int argc, char *argv[])
     char *shmptr;
     int semid;
     static ushort  start_val[2] = {1, 0};
-      union semun    arg;
+    union semun    arg;
 
+
+    
     // Create a shared memory segment
     int shmid = shmget((int) pid, sizeof(memory), 0666 | IPC_CREAT);
     if (shmid == -1) {
@@ -143,7 +160,7 @@ int main(int argc, char *argv[])
         exit(2);
     }
     
-
+    memory.numItems = itemCount;
     // Copy the array of items to the struct memory
     memcpy(memory.items, items, sizeof(items));
 
@@ -164,7 +181,7 @@ int main(int argc, char *argv[])
       perror("semctl -- parent -- initialization");
       exit(4);
     }
-
+   
     /*
     // Forking and executing child processes
     for (int i = 0; i < NUM_CASHIERS; i++) {
@@ -198,6 +215,7 @@ int main(int argc, char *argv[])
         // Customer Spawning Child Process
         while (1) { // Replace with a suitable condition to stop spawning
             int delay = randomInRange(MIN_CUSTOMER_PERSEC, MAX_CUSTOMER_PERSEC);
+            printf("Customer %d is comming to the market in %d seconds\n", cartID, delay);
             int buyTime = randomInRange(MIN_BUY_TIME, MAX_BUY_TIME);
             sleep(delay);
 
@@ -224,13 +242,14 @@ int main(int argc, char *argv[])
         exit(0); // Exit the customer spawning process once done
     }
 
-
+    
 
 
     /*
     TODO: Wait for all child processes to finish
     */
-
+    while (1)
+        pause();
 
     // Detach the shared memory segment
     if (shmdt(shmptr) == -1) {
@@ -260,19 +279,3 @@ int main(int argc, char *argv[])
 
 
 
-char* trim(char *str) {
-    while (*str && (*str == ' ' || *str == '\t' || *str == '\n')) {
-        str++;
-    }
-    int len = strlen(str);
-    while (len > 0 && (str[len - 1] == ' ' || str[len - 1] == '\t' || str[len - 1] == '\n')) {
-        len--;
-    }
-    str[len] = '\0';
-
-    return str;
-}
-
-int randomInRange(int min_range, int max_range) {
-    return (int) (min_range +  (rand() % (max_range - min_range)));
-}

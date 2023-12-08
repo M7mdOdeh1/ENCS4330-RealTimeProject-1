@@ -23,9 +23,6 @@
 
 
 
-char* trim(char *str);
-
-int RandomNumberGen(int min_range, int max_range);
 
 
 struct Item {
@@ -35,6 +32,7 @@ struct Item {
 };
 
 struct MEMORY {
+    int numItems;
     struct Item items[MAX_ITEMS]; 
     int head, tail;
 };
