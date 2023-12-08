@@ -8,6 +8,7 @@ Mahmoud Hamdan
 
 #include "local3.h"
 
+
 char* trim(char *str) {
     while (*str && (*str == ' ' || *str == '\t' || *str == '\n')) {
         str++;
@@ -203,7 +204,7 @@ int main(int argc, char *argv[])
     }
     */
 
-
+    // Customer Spawner
     pid_t cust_spawner_pid = fork();
     if (cust_spawner_pid == -1) {
         perror("fork failed");

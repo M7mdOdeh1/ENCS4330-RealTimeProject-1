@@ -22,6 +22,8 @@
 #define MAX_CASHIERS 100
 
 
+char *trim(char *str);
+int randomInRange(int min_range, int max_range);
 
 
 
@@ -43,7 +45,8 @@ struct String {
 
 struct SHOPPING_CART {
     int numItems;
-    struct String items[MAX_ITEMS][2];
+    int quantityOfItems;
+    struct String items[MAX_ITEMS][3];
 };
 
 struct CASHIER{
