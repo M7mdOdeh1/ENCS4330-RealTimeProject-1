@@ -31,13 +31,16 @@ int main(int argc, char *argv[])
 
     struct SHOPPING_CART cart;
 
+    srand((unsigned) getpid()); // seed for the random function with the ID of the current process
 
     if ( argc != 5 ) {
         fprintf(stderr, "Usage: %s message\n", *argv);
     	exit(-1);
      }
 
-    printf("Customer %d is shopping for %d seconds\n", cartID, waitTime);
+
+    // sleep for the time the customer is shopping
+    printf("Customer %d is shopping for %d seconds\n", cartID, buyTime);
     sleep(buyTime);
 
     
@@ -87,7 +90,12 @@ int main(int argc, char *argv[])
         }
 
     }
-    
+    // print all items
+    for (int i = 0; i < memptr->numItems; i++) {
+        printf("%s %d %f\n", memptr->items[i].name, memptr->items[i].inventory, memptr->items[i].price);
+    }
+
+    printf("----------------------------------------\n");
 
     // print the cart items
     printf("Customer %d is done shopping. The contents of the cart are:\n", cartID);
@@ -95,7 +103,11 @@ int main(int argc, char *argv[])
         printf("%s %s %s\n", cart.items[i][0].str, cart.items[i][1].str, cart.items[i][2].str);
     }
 
-
+    printf("----------------------------------------\n");
+    // print the items after the customer is done shopping
+    for (int i = 0; i < memptr->numItems; i++) {
+        printf("%s %d %f\n", memptr->items[i].name, memptr->items[i].inventory, memptr->items[i].price);
+    }
 
 
 

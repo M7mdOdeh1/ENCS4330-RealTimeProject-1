@@ -9,6 +9,7 @@ Mahmoud Hamdan
 #include "local3.h"
 
 
+
 char* trim(char *str) {
     while (*str && (*str == ' ' || *str == '\t' || *str == '\n')) {
         str++;
@@ -26,16 +27,20 @@ int randomInRange(int min_range, int max_range) {
     return (int) (min_range +  (rand() % (max_range - min_range)));
 }
 
+// global variables
+int shmid, semid;
+char *shmptr;
+
+
 
 int main(int argc, char *argv[])
 {
 
-
-	
     if  ( argc != 3 ) {
     	fprintf(stderr, "Usage: %s message\n", *argv);
     	exit(-1);
      }
+
     int CASHIER_THRESHOLD;
     int CASHIER_BEHAVIOR = 10;
     int MIN_SCAN_TIME;
@@ -141,15 +146,13 @@ int main(int argc, char *argv[])
 
     pid_t pid = getpid();
     static struct  MEMORY memory;
-    char *shmptr;
-    int semid;
     static ushort  start_val[2] = {1, 0};
     union semun    arg;
 
 
     
     // Create a shared memory segment
-    int shmid = shmget((int) pid, sizeof(memory), 0666 | IPC_CREAT);
+    shmid = shmget((int) pid, sizeof(memory), 0666 | IPC_CREAT);
     if (shmid == -1) {
         perror("shmid -- parent -- creation");
         exit(1);
@@ -165,7 +168,6 @@ int main(int argc, char *argv[])
     // Copy the array of items to the struct memory
     memcpy(memory.items, items, sizeof(items));
 
-    
     // copy the memory struct to the shared memory segment
     memcpy(shmptr, (char *) &memory, sizeof(memory));
  
@@ -182,13 +184,40 @@ int main(int argc, char *argv[])
       perror("semctl -- parent -- initialization");
       exit(4);
     }
+
+    // Signal Handlers for SIGINT to clear the IPCs before exiting
+    if ( sigset(SIGINT, clearIPCs) == SIG_ERR ) {
+
+        perror("Sigset can not set SIGINT");
+        exit(SIGINT);
+    }
+
    
-    /*
-    // Forking and executing child processes
+    struct CASHIER cashiers[MAX_CASHIERS];
+
+    
+    // Forking and executing child processes for cashiers
     for (int i = 0; i < NUM_CASHIERS; i++) {
 
-        
+        cashiers[i].id = i;
+        cashiers[i].behavior = CASHIER_BEHAVIOR;
+        cashiers[i].numCustomers = 0; // Assuming initial number of customers is 0
+        cashiers[i].head = 0;         // Assuming initial queue head position is 0
+        cashiers[i].tail = 0;         // Assuming initial queue tail position is 0
 
+        // Initialize the carts queue for each cashier
+        for (int j = 0; j < MAX_CUSTOMERS; j++) {
+            cashiers[i].cartsQueue[j].numItems = 0;         // Or any initial value
+            cashiers[i].cartsQueue[j].quantityOfItems = 0;  // Or any initial value
+            // Initialize the items in each cart (if needed)
+            for (int k = 0; k < MAX_ITEMS; k++) {
+                strcpy(cashiers[i].cartsQueue[j].items[k][0].str, ""); // Empty string or initial value
+                strcpy(cashiers[i].cartsQueue[j].items[k][1].str, ""); // Empty string or initial value
+                strcpy(cashiers[i].cartsQueue[j].items[k][2].str, ""); // Empty string or initial value
+            }
+        }
+        
+    
         pid_t cash_pid = fork();
         if (cash_pid == -1) {
             perror("fork cashier failed");
@@ -202,7 +231,22 @@ int main(int argc, char *argv[])
             exit(6);
         }
     }
-    */
+
+   /* // print the cashiers
+    printf("The following cashiers are open:\n");
+    for (int i = 0; i < NUM_CASHIERS; i++) {
+        printf("Cashier %d\n", cashiers[i].id);
+        printf("Behavior: %d\n", cashiers[i].behavior);
+        for (int j = 0; j < MAX_CUSTOMERS; j++) {
+            printf("Cart %d\n", j);
+            printf("Number of items: %d\n", cashiers[i].cartsQueue[j].numItems);
+            for (int k = 0; k < MAX_ITEMS; k++) {
+                printf("Item %d: %s\n", k, cashiers[i].cartsQueue[j].items[k][0].str);
+            }
+        }
+    }*/
+    
+    
 
     // Customer Spawner
     pid_t cust_spawner_pid = fork();
@@ -213,8 +257,10 @@ int main(int argc, char *argv[])
 
     if (cust_spawner_pid == 0) {
         int cartID = 0;
+
+        int c = 1;
         // Customer Spawning Child Process
-        while (1) { // Replace with a suitable condition to stop spawning
+        while (c--) { // Replace with a suitable condition to stop spawning
             int delay = randomInRange(MIN_CUSTOMER_PERSEC, MAX_CUSTOMER_PERSEC);
             printf("Customer %d is comming to the market in %d seconds\n", cartID, delay);
             int buyTime = randomInRange(MIN_BUY_TIME, MAX_BUY_TIME);
@@ -252,6 +298,17 @@ int main(int argc, char *argv[])
     while (1)
         pause();
 
+    // clear the IPCs
+    clearIPCs(shmid, shmptr, semid);
+        
+
+
+
+    return 0;
+
+}
+
+void clearIPCs() {
     // Detach the shared memory segment
     if (shmdt(shmptr) == -1) {
         perror("shmdt failed");
@@ -269,12 +326,8 @@ int main(int argc, char *argv[])
         perror("semctl IPC_RMID failed");
         exit(EXIT_FAILURE);
     }
-        
 
-
-
-    return 0;
-
+    exit(0);
 }
 
 

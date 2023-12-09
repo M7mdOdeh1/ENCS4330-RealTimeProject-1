@@ -19,11 +19,12 @@
 #define MAX_LINE_LENGTH 100
 #define MAX_ITEMS 1000
 #define MAX_CUSTOMERS 10000
-#define MAX_CASHIERS 100
+#define MAX_CASHIERS 1000
 
 
 char *trim(char *str);
 int randomInRange(int min_range, int max_range);
+void clearIPCs();
 
 
 
@@ -50,9 +51,16 @@ struct SHOPPING_CART {
 };
 
 struct CASHIER{
-    // add a queue of shopping carts
+    int id;
     int behavior; 
+    int numCustomers;
     struct SHOPPING_CART cartsQueue[MAX_CUSTOMERS];
+    int head, tail;
+};
+
+struct ALL_CASHIERS {
+    struct CASHIER cashiers[MAX_CASHIERS];
+    
 };
 
 struct ALL_SHOPPING_CARTS {

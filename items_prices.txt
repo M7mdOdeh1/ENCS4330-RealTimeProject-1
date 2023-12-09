@@ -5,3 +5,4 @@ juice			350 7
 rice			100 10
 shampoo			200 18
 showerGel		300 22
+yougurt         2000 5
