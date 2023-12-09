@@ -17,9 +17,9 @@
 #include <signal.h>
 
 #define MAX_LINE_LENGTH 100
-#define MAX_ITEMS 1000
-#define MAX_CUSTOMERS 10000
-#define MAX_CASHIERS 1000
+#define MAX_ITEMS 20
+#define MAX_CUSTOMERS 100
+#define MAX_CASHIERS 10
 
 
 char *trim(char *str);
@@ -50,6 +50,7 @@ struct SHOPPING_CART {
     struct String items[MAX_ITEMS][3];
 };
 
+
 struct CASHIER{
     int id;
     int behavior; 
@@ -58,9 +59,11 @@ struct CASHIER{
     int head, tail;
 };
 
+typedef struct CASHIER CASHIER;
+
 struct ALL_CASHIERS {
     int numCashiers;
-    struct CASHIER cashiers[MAX_CASHIERS];
+    CASHIER cashiers[MAX_CASHIERS];
     
 };
 

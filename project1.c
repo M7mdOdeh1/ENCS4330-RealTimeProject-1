@@ -213,20 +213,32 @@ int main(int argc, char *argv[])
         exit(1);
     }
     struct ALL_CASHIERS all_cashiers;
-    struct CASHIER *cashiers = (struct CASHIER *)malloc(sizeof(struct CASHIER) * NUM_CASHIERS);
+    //all_cashiers.cashiers = (struct CASHIER *)malloc(sizeof(struct CASHIER) * NUM_CASHIERS);
     all_cashiers.numCashiers = NUM_CASHIERS;
-    all_cashiers.cashiers = cashiers;
-
+    
+    struct CASHIER cashier ;
 
     // Forking and executing child processes for cashiers
     for (int i = 0; i < NUM_CASHIERS; i++) {
-
+        
         // Initialize the cashier
-        cashiers[i].id = i;
-        cashiers[i].behavior = CASHIER_BEHAVIOR;
-        cashiers[i].numCustomers = 0; // Assuming initial number of customers is 0
-        cashiers[i].head = 0;         // Assuming initial queue head position is 0
-        cashiers[i].tail = 0;         // Assuming initial queue tail position is 0
+        all_cashiers.cashiers[i].id = i;
+        all_cashiers.cashiers[i].behavior = CASHIER_BEHAVIOR;
+        all_cashiers.cashiers[i].numCustomers = 2; // Assuming initial number of customers is 0
+        all_cashiers.cashiers[i].head = 0;         // Assuming initial queue head position is 0
+        all_cashiers.cashiers[i].tail = 0;         // Assuming initial queue tail position is 0
+
+        // Initialize the carts queue for each cashier
+        for (int j = 0; j < 1; j++) {
+            all_cashiers.cashiers[i].cartsQueue[j].numItems = 1;         // Or any initial value
+            all_cashiers.cashiers[i].cartsQueue[j].quantityOfItems = 2;  // Or any initial value
+            // Initialize the items in each cart (if needed)
+            for (int k = 0; k < 1; k++) {
+                strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][0].str, "A"); // Empty string or initial value
+                strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][1].str, "2"); // Empty string or initial value
+                strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][2].str, "100"); // Empty string or initial value
+            }
+        }
 
         // // Initialize the carts queue for each cashier
         // for (int j = 0; j < 1; j++) {
@@ -255,28 +267,14 @@ int main(int argc, char *argv[])
             exit(6);
         }
     }
+    
     // copy the cashiers struct to the shared memory segment of all cashiers
     memcpy(shmptr_cashier, (char *) &all_cashiers, sizeof(all_cashiers));
 
-//    /// print the cashiers
-//     printf("The following cashiers are open:\n");
-//     for (int i = 0; i < 2; i++) {
-//         printf("Cashier %d\n", cashiers[i].id);
-//         printf("Behavior: %d\n", cashiers[i].behavior);
-//         for (int j = 0; j < 1; j++) {
-//             printf("Cart %d\n", j);
-//             printf("Number of items: %d\n", cashiers[i].cartsQueue[j].numItems);
-//             printf("Quantity of items: %d\n", cashiers[i].cartsQueue[j].quantityOfItems);
-//             for (int k = 0; k < 1; k++) {
-//                 printf("Item %d\n", k);
-//                 printf("Name: %s\n", cashiers[i].cartsQueue[j].items[k][0].str);
-//                 printf("Quantity: %s\n", cashiers[i].cartsQueue[j].items[k][1].str);
-//                 printf("Price: %s\n", cashiers[i].cartsQueue[j].items[k][2].str);
-//             }
-//         }
-
-//     }
-
+    // print all_cashiers
+    for (int i = 0; i < all_cashiers.numCashiers; i++) {
+        printf("Cashier %d has %d customers\n", all_cashiers.cashiers[i].id, all_cashiers.cashiers[i].numCustomers);
+    }
 
 
     // Customer Spawner

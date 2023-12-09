@@ -131,10 +131,18 @@ int main(int argc, char *argv[])
     // access the cashiers 
     struct ALL_CASHIERS *memptr_cashiers;
     memptr_cashiers = (struct ALL_CASHIERS *) shmptr_cashier;
-    printf("number of cashiers: %d\n", memptr_cashiers->numCashiers);
+    printf("numCashiers: %d\n", memptr_cashiers->numCashiers);
+    
     // print the cashiers
     for (int i = 0; i < memptr_cashiers->numCashiers; i++) {
         printf("Cashier %d has %d customers\n", memptr_cashiers->cashiers[i].id, memptr_cashiers->cashiers[i].numCustomers);
+        // print the carts
+        for (int j = 0; j < memptr_cashiers->cashiers[i].numCustomers; j++) {
+            printf("Customer %d has %d items\n", j, memptr_cashiers->cashiers[i].cartsQueue[j].numItems);
+            for (int k = 0; k < memptr_cashiers->cashiers[i].cartsQueue[j].numItems; k++) {
+                printf("%s %s %s\n", memptr_cashiers->cashiers[i].cartsQueue[j].items[k][0].str, memptr_cashiers->cashiers[i].cartsQueue[j].items[k][1].str, memptr_cashiers->cashiers[i].cartsQueue[j].items[k][2].str);
+            }
+        }
     }
 
 
