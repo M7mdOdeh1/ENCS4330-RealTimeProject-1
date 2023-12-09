@@ -59,6 +59,7 @@ struct CASHIER{
 };
 
 struct ALL_CASHIERS {
+    int numCashiers;
     struct CASHIER cashiers[MAX_CASHIERS];
     
 };

@@ -107,8 +107,8 @@ int main(int argc, char *argv[])
     }
     fclose(file); // closing the file
 
-    
-    
+
+
      // Declare an array of Item structures
     struct Item items[MAX_ITEMS];
 
@@ -150,7 +150,7 @@ int main(int argc, char *argv[])
     union semun    arg;
 
 
-    
+
     // Create a shared memory segment
     shmid = shmget((int) pid, sizeof(memory), 0666 | IPC_CREAT);
     if (shmid == -1) {
@@ -163,14 +163,14 @@ int main(int argc, char *argv[])
         perror("shmptr -- parent -- attach");
         exit(2);
     }
-    
+
     memory.numItems = itemCount;
     // Copy the array of items to the struct memory
     memcpy(memory.items, items, sizeof(items));
 
     // copy the memory struct to the shared memory segment
     memcpy(shmptr, (char *) &memory, sizeof(memory));
- 
+
 
 
     semid = semget((int) pid, 2, IPC_CREAT | 0666);
@@ -178,8 +178,8 @@ int main(int argc, char *argv[])
         perror("semget -- parent -- creation");
         exit(3);
     }
-   
-    arg.array = start_val; 
+
+    arg.array = start_val;
     if ( semctl(semid, 0, SETALL, arg) == -1 ) {
       perror("semctl -- parent -- initialization");
       exit(4);
@@ -192,38 +192,62 @@ int main(int argc, char *argv[])
         exit(SIGINT);
     }
 
-   
-    struct CASHIER cashiers[MAX_CASHIERS];
+    // generate a key for the shared memory segment
+    key_t key_cashiers = ftok(".", 'B'); // Ensure 'somefile' exists
+    if (key_cashiers == -1) {
+        perror("ftok for all cashiers failed");
+        exit(EXIT_FAILURE);
+    }
 
-    
+    // create shared memory for all cashiers
+    int shmid_cashiers = shmget(key_cashiers, sizeof(struct CASHIER) * NUM_CASHIERS, 0666 | IPC_CREAT);
+    if (shmid_cashiers == -1) {
+        perror("shmget for all cashiers failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // attach to the shared memory segment
+    char *shmptr_cashier = (char *) shmat(shmid_cashiers, (char)0, 0);
+    if (shmptr_cashier== (char *) -1) {
+        perror("shmat -- parent -- attach");
+        exit(1);
+    }
+    struct ALL_CASHIERS all_cashiers;
+    struct CASHIER *cashiers = (struct CASHIER *)malloc(sizeof(struct CASHIER) * NUM_CASHIERS);
+    all_cashiers.numCashiers = NUM_CASHIERS;
+    all_cashiers.cashiers = cashiers;
+
+
     // Forking and executing child processes for cashiers
     for (int i = 0; i < NUM_CASHIERS; i++) {
 
+        // Initialize the cashier
         cashiers[i].id = i;
         cashiers[i].behavior = CASHIER_BEHAVIOR;
         cashiers[i].numCustomers = 0; // Assuming initial number of customers is 0
         cashiers[i].head = 0;         // Assuming initial queue head position is 0
         cashiers[i].tail = 0;         // Assuming initial queue tail position is 0
 
-        // Initialize the carts queue for each cashier
-        for (int j = 0; j < MAX_CUSTOMERS; j++) {
-            cashiers[i].cartsQueue[j].numItems = 0;         // Or any initial value
-            cashiers[i].cartsQueue[j].quantityOfItems = 0;  // Or any initial value
-            // Initialize the items in each cart (if needed)
-            for (int k = 0; k < MAX_ITEMS; k++) {
-                strcpy(cashiers[i].cartsQueue[j].items[k][0].str, ""); // Empty string or initial value
-                strcpy(cashiers[i].cartsQueue[j].items[k][1].str, ""); // Empty string or initial value
-                strcpy(cashiers[i].cartsQueue[j].items[k][2].str, ""); // Empty string or initial value
-            }
-        }
-        
-    
+        // // Initialize the carts queue for each cashier
+        // for (int j = 0; j < 1; j++) {
+        //     cashiers[i].cartsQueue[j].numItems = 0;         // Or any initial value
+        //     cashiers[i].cartsQueue[j].quantityOfItems = 0;  // Or any initial value
+        //     // Initialize the items in each cart (if needed)
+        //     for (int k = 0; k < 1; k++) {
+        //         strcpy(cashiers[i].cartsQueue[j].items[k][0].str, "A"); // Empty string or initial value
+        //         strcpy(cashiers[i].cartsQueue[j].items[k][1].str, "2"); // Empty string or initial value
+        //         strcpy(cashiers[i].cartsQueue[j].items[k][2].str, "100"); // Empty string or initial value
+        //     }
+        // }
+
+
+
         pid_t cash_pid = fork();
         if (cash_pid == -1) {
             perror("fork cashier failed");
             exit(5);
         }
-        
+
         if (cash_pid == 0) {
             // Child process
             execl("./cashier", "./cashier", (char *)0);
@@ -231,22 +255,29 @@ int main(int argc, char *argv[])
             exit(6);
         }
     }
+    // copy the cashiers struct to the shared memory segment of all cashiers
+    memcpy(shmptr_cashier, (char *) &all_cashiers, sizeof(all_cashiers));
 
-   /* // print the cashiers
-    printf("The following cashiers are open:\n");
-    for (int i = 0; i < NUM_CASHIERS; i++) {
-        printf("Cashier %d\n", cashiers[i].id);
-        printf("Behavior: %d\n", cashiers[i].behavior);
-        for (int j = 0; j < MAX_CUSTOMERS; j++) {
-            printf("Cart %d\n", j);
-            printf("Number of items: %d\n", cashiers[i].cartsQueue[j].numItems);
-            for (int k = 0; k < MAX_ITEMS; k++) {
-                printf("Item %d: %s\n", k, cashiers[i].cartsQueue[j].items[k][0].str);
-            }
-        }
-    }*/
-    
-    
+//    /// print the cashiers
+//     printf("The following cashiers are open:\n");
+//     for (int i = 0; i < 2; i++) {
+//         printf("Cashier %d\n", cashiers[i].id);
+//         printf("Behavior: %d\n", cashiers[i].behavior);
+//         for (int j = 0; j < 1; j++) {
+//             printf("Cart %d\n", j);
+//             printf("Number of items: %d\n", cashiers[i].cartsQueue[j].numItems);
+//             printf("Quantity of items: %d\n", cashiers[i].cartsQueue[j].quantityOfItems);
+//             for (int k = 0; k < 1; k++) {
+//                 printf("Item %d\n", k);
+//                 printf("Name: %s\n", cashiers[i].cartsQueue[j].items[k][0].str);
+//                 printf("Quantity: %s\n", cashiers[i].cartsQueue[j].items[k][1].str);
+//                 printf("Price: %s\n", cashiers[i].cartsQueue[j].items[k][2].str);
+//             }
+//         }
+
+//     }
+
+
 
     // Customer Spawner
     pid_t cust_spawner_pid = fork();
@@ -273,14 +304,16 @@ int main(int argc, char *argv[])
             }
 
             if (customerPid == 0) {
-                char pidStr[10], cartIDStr[10], buyTimeStr[10], waitTimeStr[10];
+                char pidStr[10], cartIDStr[10], buyTimeStr[10], waitTimeStr[10], key_cashiersStr[10];
                 sprintf(pidStr, "%d", (int)pid);
                 sprintf(cartIDStr, "%d", cartID);
                 sprintf(buyTimeStr, "%d", buyTime);
                 sprintf(waitTimeStr, "%d", WAIT_TIME);
+                sprintf(key_cashiersStr, "%d", key_cashiers);
+                
 
                 // Customer Process
-                execl("./customer", "./customer", pidStr, cartIDStr, buyTimeStr, waitTimeStr, (char *)0);
+                execl("./customer", "./customer", pidStr, cartIDStr, buyTimeStr, waitTimeStr, key_cashiersStr, (char *)0);
                 perror("execl -- customer -- failed");
                 exit(9);
             }
@@ -289,7 +322,7 @@ int main(int argc, char *argv[])
         exit(0); // Exit the customer spawning process once done
     }
 
-    
+
 
 
     /*
@@ -300,7 +333,7 @@ int main(int argc, char *argv[])
 
     // clear the IPCs
     clearIPCs(shmid, shmptr, semid);
-        
+
 
 
 
@@ -309,6 +342,9 @@ int main(int argc, char *argv[])
 }
 
 void clearIPCs() {
+
+    printf("Clearing IPCs...\n");
+
     // Detach the shared memory segment
     if (shmdt(shmptr) == -1) {
         perror("shmdt failed");
@@ -326,6 +362,9 @@ void clearIPCs() {
         perror("semctl IPC_RMID failed");
         exit(EXIT_FAILURE);
     }
+
+    printf("IPCs cleared successfully\n");
+    printf("Exiting...\n");
 
     exit(0);
 }
