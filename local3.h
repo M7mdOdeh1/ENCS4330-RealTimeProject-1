@@ -29,9 +29,10 @@ int randomInRange(int min_range, int max_range);
 void clearIPCs();
 void catchAlarm(int sig_num);
 void catchSIGUSR1(int sig_num);
+void catchSIGUSR2(int sig_num);
+void serveCustomers(); 
 
-
-
+void moveQueueToOtherCashiers();
 
 struct Item {
     char name[50];
@@ -60,6 +61,7 @@ struct SHOPPING_CART {
 struct CASHIER{
     int id;
     int behavior; 
+    int isActive;
     int numCustomers;
     int scanTime;
     int numItemsInCarts;
@@ -70,6 +72,7 @@ struct CASHIER{
 typedef struct CASHIER CASHIER;
 
 struct ALL_CASHIERS {
+    
     int numCashiers;
     CASHIER cashiers[MAX_CASHIERS];
     

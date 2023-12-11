@@ -27,11 +27,23 @@ int randomInRange(int min_range, int max_range) {
     return (int) (min_range +  (rand() % (max_range - min_range)));
 }
 
+
 // global variables
-int shmid, semid;
-char *shmptr;
+int shmid, semid, shmid_cashiers, semid_cashiers;
+char *shmptr, *shmptr_cashiers;
 
+int cahsiersLeftTheMarket = 0;
+int customersLeftTheMarket = 0;
+int totalCustomersSpawned = 0;
 
+int CUST_IMPATIENT_TH;
+int NUM_CASHIERS;
+
+int temp=0;
+
+struct ALL_CASHIERS all_cashiers;
+int pids_customer[MAX_CUSTOMERS];
+pid_t cust_spawner_pid;
 
 int main(int argc, char *argv[])
 {
@@ -41,17 +53,18 @@ int main(int argc, char *argv[])
     	exit(-1);
      }
 
-    int CASHIER_THRESHOLD;
-    int CASHIER_BEHAVIOR = 10;
+    float CASHIER_THRESHOLD;
+    int CASHIER_BEHAVIOR;
     int MIN_SCAN_TIME;
     int MAX_SCAN_TIME;
-    int NUM_CASHIERS;
     int MAX_CUSTOMER_PERSEC;
     int MIN_CUSTOMER_PERSEC;
     int MAX_BUY_TIME;
     int MIN_BUY_TIME;
     int WAIT_TIME;
-    int LEFT_BCS_IMPATIENT;
+    int BEHAVIOR_CHANGE_SEC;
+
+
 
     srand((unsigned) getpid()); // seed for the random function with the ID of the current process
 
@@ -87,7 +100,7 @@ int main(int argc, char *argv[])
 
         // Assign values based on variable name
         if (strcmp(varName, "CASHIER_THRESHOLD") == 0) {
-            CASHIER_THRESHOLD = value;
+            CASHIER_THRESHOLD = (float)value;
         } else if (strcmp(varName, "NUM_CUS_PERSEC") == 0) {
             MAX_CUSTOMER_PERSEC = max;
             MIN_CUSTOMER_PERSEC = min;
@@ -101,9 +114,14 @@ int main(int argc, char *argv[])
             MIN_BUY_TIME = min;
         } else if (strcmp(varName, "WAIT_TIME") == 0) {
             WAIT_TIME = value;
-        } else if (strcmp(varName, "LEFT_BCS_IMPATIENT") == 0) {
-            LEFT_BCS_IMPATIENT = value;
+        } else if (strcmp(varName, "CUST_IMPATIENT_TH") == 0) {
+            CUST_IMPATIENT_TH = value;
+        } else if (strcmp(varName, "CASHIER_BEHAVIOR") == 0) {
+            CASHIER_BEHAVIOR = value;
+        } else if (strcmp(varName, "BEHAVIOR_CHANGE_SEC") == 0) {
+            BEHAVIOR_CHANGE_SEC = value;
         }
+        
     }
     fclose(file); // closing the file
 
@@ -186,10 +204,26 @@ int main(int argc, char *argv[])
     }
 
     // Signal Handlers for SIGINT to clear the IPCs before exiting
-    if ( sigset(SIGINT, clearIPCs) == SIG_ERR ) {
+    if ( sigset(SIGINT, catchSIGINT) == SIG_ERR ) {
 
         perror("Sigset can not set SIGINT");
         exit(SIGINT);
+    }
+
+    // signal handler for SIGUSR1 to indicate that a cashier has left the market
+    if (sigset (SIGUSR1, catchSIGUSR1) == SIG_ERR) {
+        perror("signal -- parent -- SIGUSR1");
+        exit(SIGUSR1);
+    }
+    // signal handler for SIGUSR2 to indicate that a customer has left the market
+    if (sigset (SIGUSR2, catchSIGUSR2) == SIG_ERR) {
+        perror("signal -- parent -- SIGUSR2");
+        exit(SIGUSR2);
+    }
+    // signal handler for SIGALARM to indicate that the income increase and check the threshold
+    if (sigset (SIGALRM, catchAlarm) == SIG_ERR) {
+        perror("signal -- parent -- SIGRTMIN");
+        exit(SIGALRM);
     }
 
     // generate a key for the shared memory segment
@@ -212,7 +246,6 @@ int main(int argc, char *argv[])
         perror("shmat -- parent -- attach");
         exit(1);
     }
-    struct ALL_CASHIERS all_cashiers;
     //all_cashiers.cashiers = (struct CASHIER *)malloc(sizeof(struct CASHIER) * NUM_CASHIERS);
     all_cashiers.numCashiers = NUM_CASHIERS;
     
@@ -241,15 +274,22 @@ int main(int argc, char *argv[])
 
         if (cash_pid == 0) {
             // Child process
-
-            char key_cashiersStr[20], iStr[10];
-            sprintf(key_cashiersStr, "%d", key_cashiers);
-            sprintf(iStr, "%d", i);
             
-            execl("./cashier", "./cashier", key_cashiersStr, iStr, (char *)0);
+            char iStr[10], BEHAVIOR_CHANGE_SECStr[10], CASHIER_THRESHOLDSTR[10], *key_cashiersStr;
+            key_cashiersStr = (char *)malloc(sizeof(char) * 32);
+
+            sprintf(key_cashiersStr, "%d\0",key_cashiers);
+            sprintf(iStr, "%d", i);
+            sprintf(BEHAVIOR_CHANGE_SECStr, "%d\0", BEHAVIOR_CHANGE_SEC);
+            sprintf(CASHIER_THRESHOLDSTR, "%f\0", CASHIER_THRESHOLD);
+            
+            
+            execl("./cashier", "./cashier", key_cashiersStr, iStr, BEHAVIOR_CHANGE_SECStr, CASHIER_THRESHOLDSTR, (char *)0);
             perror("execl -- cashier -- failed");
             exit(6);
+
         }
+
         else{
             // Initialize the cashier
             all_cashiers.cashiers[i].id = cash_pid;
@@ -257,11 +297,14 @@ int main(int argc, char *argv[])
             all_cashiers.cashiers[i].numCustomers = 0; 
             all_cashiers.cashiers[i].numItemsInCarts = 0; 
             all_cashiers.cashiers[i].scanTime = randomInRange(MIN_SCAN_TIME, MAX_SCAN_TIME);
+            all_cashiers.cashiers[i].isActive = 1;
             all_cashiers.cashiers[i].head = 0;         
             all_cashiers.cashiers[i].tail = 0;
 
             printf("Cashier id= %d is created with scan time %d\n", all_cashiers.cashiers[i].id, all_cashiers.cashiers[i].scanTime);
         }
+
+
     }
     
     // copy the cashiers struct to the shared memory segment of all cashiers
@@ -272,9 +315,10 @@ int main(int argc, char *argv[])
         printf("Cashier %d has %d customers\n", all_cashiers.cashiers[i].id, all_cashiers.cashiers[i].numCustomers);
     }
 
+    
 
     // Customer Spawner
-    pid_t cust_spawner_pid = fork();
+    cust_spawner_pid = fork();
     if (cust_spawner_pid == -1) {
         perror("fork failed");
         exit(7);
@@ -285,7 +329,7 @@ int main(int argc, char *argv[])
 
         int c = 1;
         // Customer Spawning Child Process
-        while (c--) { // Replace with a suitable condition to stop spawning
+        while (c--) { 
             int delay = randomInRange(MIN_CUSTOMER_PERSEC, MAX_CUSTOMER_PERSEC);
             printf("Customer %d is comming to the market in %d seconds\n", cartID, delay);
             int buyTime = randomInRange(MIN_BUY_TIME, MAX_BUY_TIME);
@@ -311,6 +355,10 @@ int main(int argc, char *argv[])
                 perror("execl -- customer -- failed");
                 exit(9);
             }
+            else{
+                pids_customer[cartID] = customerPid;
+                totalCustomersSpawned++;
+            }
             cartID++;
         }
         exit(0); // Exit the customer spawning process once done
@@ -335,7 +383,32 @@ int main(int argc, char *argv[])
 
 }
 
+// Signal handler for SIGINT
+void catchSIGINT(int signo) {
+    printf("Caught SIGINT\n");
+    clearIPCs();
+}
+
+
 void clearIPCs() {
+    if (temp==1)
+        return;
+
+    temp=1;
+
+    printf("Killing all child processes...\n");
+    // kill all cashiers
+    for (int i = 0; i < NUM_CASHIERS; i++) {
+        kill(all_cashiers.cashiers[i].id, SIGINT);
+    }
+
+    // kill the customer spawner
+    kill(cust_spawner_pid, SIGINT);
+
+    // kill the customers
+    for (int i = 0; i < totalCustomersSpawned; i++) {
+        kill(pids_customer[i], SIGINT);
+    }
 
     printf("Clearing IPCs...\n");
 
@@ -361,6 +434,34 @@ void clearIPCs() {
     printf("Exiting...\n");
 
     exit(0);
+}
+
+
+// Signal handler for SIGUSR1 to indicate that a cashier has left the market
+void catchSIGUSR1(int signo) {
+    cahsiersLeftTheMarket++;
+
+    if(cahsiersLeftTheMarket == NUM_CASHIERS){
+        printf("Cashier threshold reached. Sending SIGKILL to all cashiers\n");
+        
+        clearIPCs();
+    }
+
+}
+
+// Signal handler for SIGUSR2 to indicate that a customer has left the market
+void catchSIGUSR2(int signo) {
+    customersLeftTheMarket++;
+    if(customersLeftTheMarket == CUST_IMPATIENT_TH ){
+        printf("Customer Impatient Thresold reached. Sending SIGKILL to all cashiers\n");
+        clearIPCs();
+    }
+}
+
+// Signal handler for SIGRTMIN to indicate that the income increase and check the threshold
+void catchAlarm(int signo) {
+    printf("Income threshold reached.\n");
+    clearIPCs();
 }
 
 
