@@ -16,6 +16,8 @@
 #include <wait.h>
 #include <signal.h>
 
+
+
 #define MAX_LINE_LENGTH 100
 #define MAX_ITEMS 20
 #define MAX_CUSTOMERS 100
@@ -25,6 +27,9 @@
 char *trim(char *str);
 int randomInRange(int min_range, int max_range);
 void clearIPCs();
+void catchAlarm(int sig_num);
+void catchSIGUSR1(int sig_num);
+
 
 
 
@@ -45,6 +50,7 @@ struct String {
 };
 
 struct SHOPPING_CART {
+    int customerPID;
     int numItems;
     int quantityOfItems;
     struct String items[MAX_ITEMS][3];
@@ -55,6 +61,8 @@ struct CASHIER{
     int id;
     int behavior; 
     int numCustomers;
+    int scanTime;
+    int numItemsInCarts;
     struct SHOPPING_CART cartsQueue[MAX_CUSTOMERS];
     int head, tail;
 };

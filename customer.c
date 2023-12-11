@@ -3,20 +3,10 @@ Customer.c
 */
 
 #include "local3.h"
+#define _XOPEN_SOURCE 500
+int isOnCashier = 0;
 
 
-char* trim(char *str) {
-    while (*str && (*str == ' ' || *str == '\t' || *str == '\n')) {
-        str++;
-    }
-    int len = strlen(str);
-    while (len > 0 && (str[len - 1] == ' ' || str[len - 1] == '\t' || str[len - 1] == '\n')) {
-        len--;
-    }
-    str[len] = '\0';
-
-    return str;
-}
 
 int randomInRange(int min_range, int max_range) {
     return (int) (min_range +  (rand() % (max_range - min_range)));
@@ -28,7 +18,6 @@ int main(int argc, char *argv[])
     int cartID = atoi(argv[2]);
     int buyTime = atoi(argv[3]);
     int waitTime = atoi(argv[4]);
-    // convert string to key_t
     key_t key_cashier = atoi(argv[5]);
 
 
@@ -47,8 +36,7 @@ int main(int argc, char *argv[])
     sleep(buyTime);
 
     
-    
-
+    // connect to the shared memory segment for the items
     int shmid_items;
     char *shmptr_items;
     struct MEMORY *memptr_items;
@@ -71,10 +59,20 @@ int main(int argc, char *argv[])
 
     int numItemsToBuy = randomInRange(1, memptr_items->numItems);
 
+    // initialize the cart struct
+    cart.customerPID = getpid();
+    cart.numItems = 0;
+    cart.quantityOfItems = 0;
+    
+    // array of indexs of items to buy
+    int IndecisOfItemsToBuy[numItemsToBuy];
 
-    // print the items
+    // choose random items with random quantities to buy
     for (int i = 0; i < numItemsToBuy; i++) {
         int indexOfItem = randomInRange(0, memptr_items->numItems - 1);
+        // add the index of the item to the array
+        IndecisOfItemsToBuy[i] = indexOfItem;
+
         if (memptr_items->items[indexOfItem].inventory > 0) {
             // Buy a random quantity of the item
             int quantity = randomInRange(1, memptr_items->items[indexOfItem].inventory);
@@ -124,31 +122,151 @@ int main(int argc, char *argv[])
     // attach to the shared memory segment
     char *shmptr_cashier = (char *) shmat(shmid_cashiers, (char)0, 0);
     if (shmptr_cashier== (char *) -1) {
-        perror("shmat -- parent -- attach");
+        perror("shmat -- customer -- attach");
         exit(1);
     }
     
-    // access the cashiers 
+    // access the cashiers shared memory
     struct ALL_CASHIERS *memptr_cashiers;
     memptr_cashiers = (struct ALL_CASHIERS *) shmptr_cashier;
     printf("numCashiers: %d\n", memptr_cashiers->numCashiers);
     
-    // print the cashiers
-    for (int i = 0; i < memptr_cashiers->numCashiers; i++) {
-        printf("Cashier %d has %d customers\n", memptr_cashiers->cashiers[i].id, memptr_cashiers->cashiers[i].numCustomers);
-        // print the carts
-        for (int j = 0; j < memptr_cashiers->cashiers[i].numCustomers; j++) {
-            printf("Customer %d has %d items\n", j, memptr_cashiers->cashiers[i].cartsQueue[j].numItems);
-            for (int k = 0; k < memptr_cashiers->cashiers[i].cartsQueue[j].numItems; k++) {
-                printf("%s %s %s\n", memptr_cashiers->cashiers[i].cartsQueue[j].items[k][0].str, memptr_cashiers->cashiers[i].cartsQueue[j].items[k][1].str, memptr_cashiers->cashiers[i].cartsQueue[j].items[k][2].str);
+
+    // find the best line
+    int bestLineIndex = 0;
+    int bestLineNumItemsWithScanTime = memptr_cashiers->cashiers[0].numItemsInCarts * memptr_cashiers->cashiers[0].scanTime;
+    int bestLineLength = memptr_cashiers->cashiers[0].numCustomers;
+    int bestLineBehavior = memptr_cashiers->cashiers[0].behavior;
+
+    /* Check the best line queue according to this in order:
+        - The line with less 'total items' and faster scanning time
+        - Shortest length
+        - Best behavior
+    */ 
+    for (int i = 1; i < memptr_cashiers->numCashiers; i++) {
+        // check if the current line is better than the best line
+        if (memptr_cashiers->cashiers[i].numItemsInCarts < bestLineNumItemsWithScanTime) {
+            bestLineIndex = i;
+            bestLineLength = memptr_cashiers->cashiers[i].numCustomers;
+            bestLineBehavior = memptr_cashiers->cashiers[i].behavior;
+            bestLineNumItemsWithScanTime = memptr_cashiers->cashiers[i].numItemsInCarts * memptr_cashiers->cashiers[i].scanTime;
+        }
+        // if the current line has the same number of items as the best line, check the length
+        else if (memptr_cashiers->cashiers[i].numItemsInCarts == bestLineNumItemsWithScanTime) {
+            if (memptr_cashiers->cashiers[i].numCustomers < bestLineLength) {
+                bestLineIndex = i;
+                bestLineLength = memptr_cashiers->cashiers[i].numCustomers;
+                bestLineBehavior = memptr_cashiers->cashiers[i].behavior;
+                bestLineNumItemsWithScanTime = memptr_cashiers->cashiers[i].numItemsInCarts * memptr_cashiers->cashiers[i].scanTime;
+            }
+            // if the current line has the same number of items and the same length as the best line, check the behavior
+            else if (memptr_cashiers->cashiers[i].numCustomers == bestLineLength) {
+                if (memptr_cashiers->cashiers[i].behavior > bestLineBehavior) {
+                    bestLineIndex = i;
+                    bestLineLength = memptr_cashiers->cashiers[i].numCustomers;
+                    bestLineBehavior = memptr_cashiers->cashiers[i].behavior;
+                    bestLineNumItemsWithScanTime = memptr_cashiers->cashiers[i].numItemsInCarts * memptr_cashiers->cashiers[i].scanTime; 
+                }
             }
         }
     }
 
+    // check if iam the first customer in the line
+    if (memptr_cashiers->cashiers[bestLineIndex].numCustomers == 0) {
+        // signal the cashier that there is a customer in the line
+        if (kill(memptr_cashiers->cashiers[bestLineIndex].id, SIGUSR1) == SIG_ERR) {
+            perror("kill -- SIGUSR1 -- Customer -- failed");
+            exit(EXIT_FAILURE);
+        }
+    }
 
+    // update the number of customers in the line
+    memptr_cashiers->cashiers[bestLineIndex].numCustomers++;
+    // update the number of items in the line
+    memptr_cashiers->cashiers[bestLineIndex].numItemsInCarts += cart.numItems;
+    // update the tail of the line
+    memptr_cashiers->cashiers[bestLineIndex].tail = (memptr_cashiers->cashiers[bestLineIndex].tail + 1) % MAX_CUSTOMERS;
 
+    // add the cart to the best line
+    memptr_cashiers->cashiers[bestLineIndex].cartsQueue[memptr_cashiers->cashiers[bestLineIndex].tail] = cart;
+
+    // sleep for the time the customer is waiting in line
+    printf("Customer %d is waiting in line %d for %d seconds\n", cartID, bestLineIndex, waitTime);
+    alarm(waitTime); // set the alarm for the remaining time
     
+    // signal handler for the alarm
+    if ( sigset(SIGALRM, catchAlarm) == SIG_ERR) {
+        perror("Sigset can not set SIGALRM");
+        exit(SIGALRM);
+    }
+
+    // singal user1 handler to indicate that the customer is on the cashier 
+    if ( sigset(SIGUSR1, catchSIGUSR1) == SIG_ERR) {
+        perror("Sigset can not set SIGUSR1");
+        exit(SIGUSR1);
+    }
+    int quantityOfItems = cart.quantityOfItems;
+    pause();
+
+    if (!isOnCashier) {
+        // get the index of the customer in the line and shift the carts in the line
+        for (int i = 0; i < memptr_cashiers->cashiers[bestLineIndex].numCustomers; i++) {
+            if (memptr_cashiers->cashiers[bestLineIndex].cartsQueue[i].customerPID == getpid()) {
+                // shift the carts in the line
+                for (int j = i; j < memptr_cashiers->cashiers[bestLineIndex].numCustomers; j++) {
+                    memptr_cashiers->cashiers[bestLineIndex].cartsQueue[j] = memptr_cashiers->cashiers[bestLineIndex].cartsQueue[j + 1];
+                }
+                break;
+            }
+        }
+
+        // clear the last cart in the line
+        memptr_cashiers->cashiers[bestLineIndex].cartsQueue[memptr_cashiers->cashiers[bestLineIndex].numCustomers].customerPID = 0;
+        memptr_cashiers->cashiers[bestLineIndex].cartsQueue[memptr_cashiers->cashiers[bestLineIndex].numCustomers].numItems = 0;
+        memptr_cashiers->cashiers[bestLineIndex].cartsQueue[memptr_cashiers->cashiers[bestLineIndex].numCustomers].quantityOfItems = 0;
+        
+        printf("Customer %d is leaving the store without buying anything\n", cartID);
+       
+        // update the number of items in the line
+        //memptr_cashiers->cashiers[bestLineIndex].numItemsInCarts -= cart.numItems;
+        // The customer may be in the middle of the line, so we need to update the tail
+        memptr_cashiers->cashiers[bestLineIndex].tail = (memptr_cashiers->cashiers[bestLineIndex].tail - 1) % MAX_CUSTOMERS;
+
+
+        // Return the items to the market inventory
+        for (int i = 0; i < numItemsToBuy; i++) {
+            memptr_items->items[IndecisOfItemsToBuy[i]].inventory += atoi(cart.items[i][1].str);
+        }
+        exit(0);
+    }
+    // if the customer is on the cashier
+    else{
+        //clear the alarm since the customer is on the cashier
+        alarm(0);
+        // pause the process until the cashier is done
+        pause();       
+    }
+    // get the head of the line
+    int head = memptr_cashiers->cashiers[bestLineIndex].head;
+    // delete the cart from the line
+    memptr_cashiers->cashiers[bestLineIndex].cartsQueue[head].customerPID = 0;
+    memptr_cashiers->cashiers[bestLineIndex].cartsQueue[head].numItems = 0;
+    memptr_cashiers->cashiers[bestLineIndex].cartsQueue[head].quantityOfItems = 0;
+    // update the head of the line
+    memptr_cashiers->cashiers[bestLineIndex].head = (memptr_cashiers->cashiers[bestLineIndex].head + 1) % MAX_CUSTOMERS;
+
+    // exit the market
+    printf("Customer %d is leaving the store after buying %d items\n", cartID, quantityOfItems);
+    exit(0);    
 
 
 
+}
+
+void catchAlarm(int sig_num) {
+    
+}
+
+void catchSIGUSR1(int sig_num) {
+    isOnCashier = 1;
 }

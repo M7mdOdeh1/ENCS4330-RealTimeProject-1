@@ -219,40 +219,19 @@ int main(int argc, char *argv[])
     struct CASHIER cashier ;
 
     // Forking and executing child processes for cashiers
-    for (int i = 0; i < NUM_CASHIERS; i++) {
+    for (int i = 0; i < 1; i++) {
         
-        // Initialize the cashier
-        all_cashiers.cashiers[i].id = i;
-        all_cashiers.cashiers[i].behavior = CASHIER_BEHAVIOR;
-        all_cashiers.cashiers[i].numCustomers = 2; // Assuming initial number of customers is 0
-        all_cashiers.cashiers[i].head = 0;         // Assuming initial queue head position is 0
-        all_cashiers.cashiers[i].tail = 0;         // Assuming initial queue tail position is 0
-
-        // Initialize the carts queue for each cashier
-        for (int j = 0; j < 1; j++) {
-            all_cashiers.cashiers[i].cartsQueue[j].numItems = 1;         // Or any initial value
-            all_cashiers.cashiers[i].cartsQueue[j].quantityOfItems = 2;  // Or any initial value
-            // Initialize the items in each cart (if needed)
-            for (int k = 0; k < 1; k++) {
-                strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][0].str, "A"); // Empty string or initial value
-                strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][1].str, "2"); // Empty string or initial value
-                strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][2].str, "100"); // Empty string or initial value
-            }
-        }
-
         // // Initialize the carts queue for each cashier
         // for (int j = 0; j < 1; j++) {
-        //     cashiers[i].cartsQueue[j].numItems = 0;         // Or any initial value
-        //     cashiers[i].cartsQueue[j].quantityOfItems = 0;  // Or any initial value
+        //     all_cashiers.cashiers[i].cartsQueue[j].numItems = 1;         // Or any initial value
+        //     all_cashiers.cashiers[i].cartsQueue[j].quantityOfItems = 2;  // Or any initial value
         //     // Initialize the items in each cart (if needed)
         //     for (int k = 0; k < 1; k++) {
-        //         strcpy(cashiers[i].cartsQueue[j].items[k][0].str, "A"); // Empty string or initial value
-        //         strcpy(cashiers[i].cartsQueue[j].items[k][1].str, "2"); // Empty string or initial value
-        //         strcpy(cashiers[i].cartsQueue[j].items[k][2].str, "100"); // Empty string or initial value
+        //         strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][0].str, "A"); // Empty string or initial value
+        //         strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][1].str, "2"); // Empty string or initial value
+        //         strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][2].str, "100"); // Empty string or initial value
         //     }
         // }
-
-
 
         pid_t cash_pid = fork();
         if (cash_pid == -1) {
@@ -262,9 +241,26 @@ int main(int argc, char *argv[])
 
         if (cash_pid == 0) {
             // Child process
-            execl("./cashier", "./cashier", (char *)0);
+
+            char key_cashiersStr[20], iStr[10];
+            sprintf(key_cashiersStr, "%d", key_cashiers);
+            sprintf(iStr, "%d", i);
+            
+            execl("./cashier", "./cashier", key_cashiersStr, iStr, (char *)0);
             perror("execl -- cashier -- failed");
             exit(6);
+        }
+        else{
+            // Initialize the cashier
+            all_cashiers.cashiers[i].id = cash_pid;
+            all_cashiers.cashiers[i].behavior = CASHIER_BEHAVIOR;
+            all_cashiers.cashiers[i].numCustomers = 0; 
+            all_cashiers.cashiers[i].numItemsInCarts = 0; 
+            all_cashiers.cashiers[i].scanTime = randomInRange(MIN_SCAN_TIME, MAX_SCAN_TIME);
+            all_cashiers.cashiers[i].head = 0;         
+            all_cashiers.cashiers[i].tail = 0;
+
+            printf("Cashier id= %d is created with scan time %d\n", all_cashiers.cashiers[i].id, all_cashiers.cashiers[i].scanTime);
         }
     }
     
@@ -302,7 +298,7 @@ int main(int argc, char *argv[])
             }
 
             if (customerPid == 0) {
-                char pidStr[10], cartIDStr[10], buyTimeStr[10], waitTimeStr[10], key_cashiersStr[10];
+                char pidStr[10], cartIDStr[10], buyTimeStr[10], waitTimeStr[10], key_cashiersStr[20];
                 sprintf(pidStr, "%d", (int)pid);
                 sprintf(cartIDStr, "%d", cartID);
                 sprintf(buyTimeStr, "%d", buyTime);
