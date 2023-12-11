@@ -31,6 +31,7 @@ void catchAlarm(int sig_num);
 void catchSIGUSR1(int sig_num);
 void catchSIGUSR2(int sig_num);
 void serveCustomers(); 
+void catchSIGINT(int signo);
 
 void moveQueueToOtherCashiers();
 
@@ -96,5 +97,7 @@ union semun {
 
 struct sembuf acquire = {0, -1, SEM_UNDO}, 
               release = {0,  1, SEM_UNDO};
+
+enum {AVAIL_SLOTS, TO_CONSUME};
 
 #endif

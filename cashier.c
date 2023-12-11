@@ -11,6 +11,7 @@ int BEHAVIOR_CHANGE_SEC;
 
 float cashierIncome = 0;
 float CASHIER_THRESHOLD;
+pid_t pid;
 
 int main(int argc, char *argv[]) {
     if (argc != 5) {
@@ -24,7 +25,6 @@ int main(int argc, char *argv[]) {
     BEHAVIOR_CHANGE_SEC = atoi(argv[3]);
     CASHIER_THRESHOLD = atof(argv[4]);
 
-    printf("key_cashier: %d\n", key_cashier);
 
     // connect to the shared memory segment for the cashiers
     int shmid_cashiers = shmget(key_cashier, 0, 0);
@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
     printf("Cashier %d has id %d\n", cashier_index, memptr_cashiers->cashiers[cashier_index].id);
 
     // fork a child process to indicate that the cashier behavior is 0, then leave the market
-    pid_t pid = fork();
+    pid = fork();
     if (pid == -1) {
         perror("fork -- cashier -- failed");
         exit(10);
@@ -134,6 +134,11 @@ void serveCustomers(){
         cashierIncome += totalPrice;
 
         if (cashierIncome >= CASHIER_THRESHOLD) {
+            // kill alarmer child process
+            if (kill(pid, SIGINT) == -1) {
+                perror("kill -- cashier -- SIGKILL");
+                exit(SIGKILL);
+            }
             // send SIGALRM to the parent process to indicate that the cashier reached the threshold
             if (kill(getppid(), SIGALRM) == -1) {
                 perror("kill -- cashier -- SIGALRM");

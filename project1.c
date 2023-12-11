@@ -234,15 +234,15 @@ int main(int argc, char *argv[])
     }
 
     // create shared memory for all cashiers
-    int shmid_cashiers = shmget(key_cashiers, sizeof(struct CASHIER) * NUM_CASHIERS, 0666 | IPC_CREAT);
+    shmid_cashiers = shmget(key_cashiers, sizeof(struct CASHIER) * NUM_CASHIERS, 0666 | IPC_CREAT);
     if (shmid_cashiers == -1) {
         perror("shmget for all cashiers failed");
         exit(EXIT_FAILURE);
     }
 
     // attach to the shared memory segment
-    char *shmptr_cashier = (char *) shmat(shmid_cashiers, (char)0, 0);
-    if (shmptr_cashier== (char *) -1) {
+    shmptr_cashiers = (char *) shmat(shmid_cashiers, (char)0, 0);
+    if (shmptr_cashiers== (char *) -1) {
         perror("shmat -- parent -- attach");
         exit(1);
     }
@@ -252,7 +252,7 @@ int main(int argc, char *argv[])
     struct CASHIER cashier ;
 
     // Forking and executing child processes for cashiers
-    for (int i = 0; i < 1; i++) {
+    for (int i = 0; i < NUM_CASHIERS; i++) {
         
         // // Initialize the carts queue for each cashier
         // for (int j = 0; j < 1; j++) {
@@ -278,10 +278,10 @@ int main(int argc, char *argv[])
             char iStr[10], BEHAVIOR_CHANGE_SECStr[10], CASHIER_THRESHOLDSTR[10], *key_cashiersStr;
             key_cashiersStr = (char *)malloc(sizeof(char) * 32);
 
-            sprintf(key_cashiersStr, "%d\0",key_cashiers);
+            sprintf(key_cashiersStr, "%d",key_cashiers);
             sprintf(iStr, "%d", i);
-            sprintf(BEHAVIOR_CHANGE_SECStr, "%d\0", BEHAVIOR_CHANGE_SEC);
-            sprintf(CASHIER_THRESHOLDSTR, "%f\0", CASHIER_THRESHOLD);
+            sprintf(BEHAVIOR_CHANGE_SECStr, "%d", BEHAVIOR_CHANGE_SEC);
+            sprintf(CASHIER_THRESHOLDSTR, "%f", CASHIER_THRESHOLD);
             
             
             execl("./cashier", "./cashier", key_cashiersStr, iStr, BEHAVIOR_CHANGE_SECStr, CASHIER_THRESHOLDSTR, (char *)0);
@@ -308,7 +308,7 @@ int main(int argc, char *argv[])
     }
     
     // copy the cashiers struct to the shared memory segment of all cashiers
-    memcpy(shmptr_cashier, (char *) &all_cashiers, sizeof(all_cashiers));
+    memcpy(shmptr_cashiers, (char *) &all_cashiers, sizeof(all_cashiers));
 
     // print all_cashiers
     for (int i = 0; i < all_cashiers.numCashiers; i++) {
@@ -412,13 +412,13 @@ void clearIPCs() {
 
     printf("Clearing IPCs...\n");
 
-    // Detach the shared memory segment
+    // Detach the shared memory segment for items
     if (shmdt(shmptr) == -1) {
         perror("shmdt failed");
         exit(EXIT_FAILURE);
     }
 
-    // Remove shared memory segment
+    // Remove shared memory segment for items
     if (shmctl(shmid, IPC_RMID, (struct shmid_ds *) 0) == -1) {
         perror("shmctl IPC_RMID failed");
         exit(EXIT_FAILURE);
@@ -427,6 +427,18 @@ void clearIPCs() {
     // Remove semaphore
     if (semctl(semid, 0, IPC_RMID, 0) == -1) {
         perror("semctl IPC_RMID failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Detach the shared memory segment of all cashiers
+    if (shmdt(shmptr_cashiers) == -1) {
+        perror("shmdt failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Remove shared memory segment of all cashiers
+    if (shmctl(shmid_cashiers, IPC_RMID, (struct shmid_ds *) 0) == -1) {
+        perror("shmctl IPC_RMID failed");
         exit(EXIT_FAILURE);
     }
 

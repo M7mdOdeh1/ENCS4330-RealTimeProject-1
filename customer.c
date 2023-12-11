@@ -55,6 +55,18 @@ int main(int argc, char *argv[])
         perror("shmget -- consumer -- access");
         exit(2);
     }
+
+    /*
+    Access the semaphore set
+    */
+    int semid_items;
+    if ( (semid_items= semget((int) ppid, 2, 0)) == -1 ) {
+        perror("semget -- consumer -- access");
+        exit(3);
+    }
+
+    
+
     printf("----------------------------------------\n");
     printf("items in the market:\n");
      // print all items
@@ -138,7 +150,7 @@ int main(int argc, char *argv[])
     
     // find the best line
     int bestLineIndex = 0;
-    int bestLineNumItemsWithScanTime = memptr_cashiers->cashiers[0].numItemsInCarts * memptr_cashiers->cashiers[0].scanTime;
+    int bestLineNumItemsWithScanTime = (1+memptr_cashiers->cashiers[0].numItemsInCarts) * memptr_cashiers->cashiers[0].scanTime;
     int bestLineLength = memptr_cashiers->cashiers[0].numCustomers;
     int bestLineBehavior = memptr_cashiers->cashiers[0].behavior;
 
@@ -150,23 +162,26 @@ int main(int argc, char *argv[])
     for (int i = 1; i < memptr_cashiers->numCashiers; i++) {
         //skip the non active cashiers
         if (memptr_cashiers->cashiers[i].isActive == 0) {
+            printf("yes\n");
             continue;
         }
-
+        
+        int numItemWithScanTime = (1 + memptr_cashiers->cashiers[i].numItemsInCarts) * memptr_cashiers->cashiers[i].scanTime;
+        printf("numItemWithScanTime: %d\n", numItemWithScanTime);
         // check if the current line is better than the best line
-        if (memptr_cashiers->cashiers[i].numItemsInCarts < bestLineNumItemsWithScanTime) {
+        if ( numItemWithScanTime < bestLineNumItemsWithScanTime) {
             bestLineIndex = i;
             bestLineLength = memptr_cashiers->cashiers[i].numCustomers;
             bestLineBehavior = memptr_cashiers->cashiers[i].behavior;
-            bestLineNumItemsWithScanTime = memptr_cashiers->cashiers[i].numItemsInCarts * memptr_cashiers->cashiers[i].scanTime;
+            bestLineNumItemsWithScanTime = numItemWithScanTime;
         }
         // if the current line has the same number of items as the best line, check the length
-        else if (memptr_cashiers->cashiers[i].numItemsInCarts == bestLineNumItemsWithScanTime) {
+        else if (numItemWithScanTime == bestLineNumItemsWithScanTime) {
             if (memptr_cashiers->cashiers[i].numCustomers < bestLineLength) {
                 bestLineIndex = i;
                 bestLineLength = memptr_cashiers->cashiers[i].numCustomers;
                 bestLineBehavior = memptr_cashiers->cashiers[i].behavior;
-                bestLineNumItemsWithScanTime = memptr_cashiers->cashiers[i].numItemsInCarts * memptr_cashiers->cashiers[i].scanTime;
+                bestLineNumItemsWithScanTime = (1 +memptr_cashiers->cashiers[i].numItemsInCarts) * memptr_cashiers->cashiers[i].scanTime;
             }
             // if the current line has the same number of items and the same length as the best line, check the behavior
             else if (memptr_cashiers->cashiers[i].numCustomers == bestLineLength) {
@@ -174,7 +189,7 @@ int main(int argc, char *argv[])
                     bestLineIndex = i;
                     bestLineLength = memptr_cashiers->cashiers[i].numCustomers;
                     bestLineBehavior = memptr_cashiers->cashiers[i].behavior;
-                    bestLineNumItemsWithScanTime = memptr_cashiers->cashiers[i].numItemsInCarts * memptr_cashiers->cashiers[i].scanTime; 
+                    bestLineNumItemsWithScanTime = (1 +memptr_cashiers->cashiers[i].numItemsInCarts) * memptr_cashiers->cashiers[i].scanTime; 
                 }
             }
         }
