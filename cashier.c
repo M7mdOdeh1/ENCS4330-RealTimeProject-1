@@ -73,6 +73,12 @@ int main(int argc, char *argv[]) {
         exit(SIGUSR1);
     }
 
+    // signal handler for SIGINT
+    if (signal (SIGINT, catchSIGINT) == SIG_ERR) {
+        perror("signal -- cashier -- SIGINT");
+        exit(SIGINT);
+    }
+
     while (1){
         pause();
         
@@ -132,18 +138,33 @@ void serveCustomers(){
 
         // update the cashier income
         cashierIncome += totalPrice;
-
+        printf("cashier %d income is: %f===============================\n", cashier_index, cashierIncome);
+        printf("cashier %d threshold is: %f========**********=========\n", cashier_index, CASHIER_THRESHOLD);
         if (cashierIncome >= CASHIER_THRESHOLD) {
             // kill alarmer child process
             if (kill(pid, SIGINT) == -1) {
-                perror("kill -- cashier -- SIGKILL");
-                exit(SIGKILL);
+                perror("kill -- cashier -- SIGINT -- cashierIncome >= CASHIER_THRESHOLD");
+                exit(SIGINT);
             }
-            // send SIGALRM to the parent process to indicate that the cashier reached the threshold
-            if (kill(getppid(), SIGALRM) == -1) {
-                perror("kill -- cashier -- SIGALRM");
-                exit(SIGALRM);
+
+            // check if one of the thresholds is reached from an other cashier or customer
+            if (memptr_cashiers->isCashierBehaviorThresholdReached==0 && memptr_cashiers->isIncomeThresholdReached==0
+             && memptr_cashiers->isCustomerThresholdReached==0) {
+
+                // set the flag to indicate that the cashier income threshold is reached
+                memptr_cashiers->isIncomeThresholdReached = 1;
+
+                // send SIGUSR2 to the parent process to indicate that the cashier is leaving
+                if (kill(getppid(), SIGUSR2) == -1) {
+                    perror("kill -- cashier -- SIGUSR2");
+                    exit(SIGUSR2);
+                }
             }
+            else{
+                printf("cashier threshold is reached *****************************************\n");
+
+            }
+            exit(0);
         }
 
         // send SIGUSR1 to the customer to notify him that the cashier is done
@@ -283,17 +304,46 @@ void catchAlarm(int sig_num) {
     printf("Cashier %d received SIGALRM\n", getpid());
     // decrese the cashier behavior by 1
     memptr_cashiers->cashiers[cashier_index].behavior--;
+    
     // if the cashier behavior is 0, then leave the market
     if (memptr_cashiers->cashiers[cashier_index].behavior == 0) {
         printf("Cashier %d is leaving the market because his behavior dropped to zero\n", getpid());
-        // send SIGUSR2 to the parent process to indicate that the cashier is leaving
-        if (kill(getppid(), SIGUSR2) == -1) {
-            perror("kill -- cashier -- SIGUSR2");
-            exit(SIGUSR2);
+
+        // check if one of the thresholds is reached from an other cashier or customer
+        if (memptr_cashiers->isCashierBehaviorThresholdReached==0 && memptr_cashiers->isIncomeThresholdReached==0
+         && memptr_cashiers->isCustomerThresholdReached==0) {
+
+            // set the flag to indicate that the cashier behavior threshold is reached
+            memptr_cashiers->isCashierBehaviorThresholdReached = 1;
+
+            // send SIGUSR2 to the parent process to indicate that the cashier is leaving
+            if (kill(getppid(), SIGUSR2) == -1) {
+                perror("kill -- cashier -- SIGUSR2");
+                exit(SIGUSR2);
+            }
         }
+        else{
+            printf("cashier threshold is reached *****************************************\n");
+
+        }
+    
         exit(0);
     }
     // alarm after next behavior change seconds
     alarm(BEHAVIOR_CHANGE_SEC);
 }
 
+/*
+catch SIGINT for parent process to indicate kill alarmer child process
+before leaving the market
+*/
+
+void catchSIGINT(int sig_num) {
+    printf("Cashier %d received SIGINT\n", getpid());
+    // kill alarmer child process
+    if (kill(pid, SIGINT) == -1) {
+        perror("kill -- catchSIGINT -- cashier ");
+        exit(SIGINT);
+    }
+    exit(0);
+}

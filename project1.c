@@ -51,7 +51,8 @@ int main(int argc, char *argv[])
     if  ( argc != 3 ) {
     	fprintf(stderr, "Usage: %s message\n", *argv);
     	exit(-1);
-     }
+    }
+
 
     float CASHIER_THRESHOLD;
     int CASHIER_BEHAVIOR;
@@ -71,7 +72,13 @@ int main(int argc, char *argv[])
 
     FILE *file = fopen(argv[1], "r"); // Replace "config.txt" with your file name
     if (file == NULL) {
-        perror("Error opening file");
+        perror("Error opening the arguments file");
+        return 1;
+    }
+
+    FILE *file2 = fopen(argv[2], "r"); // Replace "items.txt" with your file name
+    if (file == NULL) {
+        perror("Error opening the items file");
         return 1;
     }
 
@@ -101,6 +108,7 @@ int main(int argc, char *argv[])
         // Assign values based on variable name
         if (strcmp(varName, "CASHIER_THRESHOLD") == 0) {
             CASHIER_THRESHOLD = (float)value;
+            printf("CASHIER_THRESHOLD = %f\n", CASHIER_THRESHOLD);
         } else if (strcmp(varName, "NUM_CUS_PERSEC") == 0) {
             MAX_CUSTOMER_PERSEC = max;
             MIN_CUSTOMER_PERSEC = min;
@@ -130,11 +138,8 @@ int main(int argc, char *argv[])
      // Declare an array of Item structures
     struct Item items[MAX_ITEMS];
 
-    FILE *file2 = fopen(argv[2], "r"); // Replace "items.txt" with your file name
-    if (file == NULL) {
-        perror("Error opening file");
-        return 1;
-    }
+    
+    
 
     char line2[MAX_LINE_LENGTH];
     int itemCount = 0;
@@ -164,7 +169,7 @@ int main(int argc, char *argv[])
 
     pid_t pid = getpid();
     static struct  MEMORY memory;
-    static ushort  start_val[2] = {1, 0};
+    static ushort  start_val[2] = {1, 1};
     union semun    arg;
 
 
@@ -248,6 +253,10 @@ int main(int argc, char *argv[])
     }
     //all_cashiers.cashiers = (struct CASHIER *)malloc(sizeof(struct CASHIER) * NUM_CASHIERS);
     all_cashiers.numCashiers = NUM_CASHIERS;
+    all_cashiers.isCashierBehaviorThresholdReached = 0;
+    all_cashiers.isIncomeThresholdReached = 0;
+    all_cashiers.isCustomerThresholdReached = 0;
+    
     
     struct CASHIER cashier ;
 
@@ -329,7 +338,7 @@ int main(int argc, char *argv[])
 
         int c = 1;
         // Customer Spawning Child Process
-        while (c--) { 
+        while (1) { 
             int delay = randomInRange(MIN_CUSTOMER_PERSEC, MAX_CUSTOMER_PERSEC);
             printf("Customer %d is comming to the market in %d seconds\n", cartID, delay);
             int buyTime = randomInRange(MIN_BUY_TIME, MAX_BUY_TIME);
@@ -374,7 +383,7 @@ int main(int argc, char *argv[])
         pause();
 
     // clear the IPCs
-    clearIPCs(shmid, shmptr, semid);
+    exitingProgram(shmid, shmptr, semid);
 
 
 
@@ -386,11 +395,15 @@ int main(int argc, char *argv[])
 // Signal handler for SIGINT
 void catchSIGINT(int signo) {
     printf("Caught SIGINT\n");
-    clearIPCs();
+    exitingProgram();
 }
 
 
-void clearIPCs() {
+/*
+ function to kill all child processes and clear the IPCs
+ before exiting the program
+*/
+void exitingProgram() {
     if (temp==1)
         return;
 
@@ -414,13 +427,13 @@ void clearIPCs() {
 
     // Detach the shared memory segment for items
     if (shmdt(shmptr) == -1) {
-        perror("shmdt failed");
+        perror("shmdt failed -- items");
         exit(EXIT_FAILURE);
     }
 
     // Remove shared memory segment for items
     if (shmctl(shmid, IPC_RMID, (struct shmid_ds *) 0) == -1) {
-        perror("shmctl IPC_RMID failed");
+        perror("shmctl IPC_RMID failed -- items");
         exit(EXIT_FAILURE);
     }
 
@@ -432,13 +445,13 @@ void clearIPCs() {
 
     // Detach the shared memory segment of all cashiers
     if (shmdt(shmptr_cashiers) == -1) {
-        perror("shmdt failed");
+        perror("shmdt failed -- all cashiers");
         exit(EXIT_FAILURE);
     }
 
     // Remove shared memory segment of all cashiers
     if (shmctl(shmid_cashiers, IPC_RMID, (struct shmid_ds *) 0) == -1) {
-        perror("shmctl IPC_RMID failed");
+        perror("shmctl IPC_RMID failed -- all cashiers");
         exit(EXIT_FAILURE);
     }
 
@@ -454,9 +467,9 @@ void catchSIGUSR1(int signo) {
     cahsiersLeftTheMarket++;
 
     if(cahsiersLeftTheMarket == NUM_CASHIERS){
-        printf("Cashier threshold reached. Sending SIGKILL to all cashiers\n");
+        printf("Behavior threshold of Cashiers threshold reached. Sending SIGINT to all cashiers\n");
         
-        clearIPCs();
+        exitingProgram();
     }
 
 }
@@ -465,15 +478,28 @@ void catchSIGUSR1(int signo) {
 void catchSIGUSR2(int signo) {
     customersLeftTheMarket++;
     if(customersLeftTheMarket == CUST_IMPATIENT_TH ){
-        printf("Customer Impatient Thresold reached. Sending SIGKILL to all cashiers\n");
-        clearIPCs();
+
+        struct ALL_CASHIERS *memptr_cashiers;
+        memptr_cashiers = (struct ALL_CASHIERS *) shmptr_cashiers;
+
+        /* check if one of the thresholds is reached  
+            (no need to exit the program again)*/
+        if (memptr_cashiers->isCustomerThresholdReached == 0 && memptr_cashiers->isCashierBehaviorThresholdReached 
+            == 0 && memptr_cashiers->isIncomeThresholdReached == 0){
+    
+            // set the flag to indicate that the customer threshold is reached
+            memptr_cashiers->isCustomerThresholdReached = 1;
+            printf("Customer Impatient Thresold reached. Sending SIGINT to all cashiers\n");
+            exitingProgram();
+        }
+        exit(0);
     }
 }
 
 // Signal handler for SIGRTMIN to indicate that the income increase and check the threshold
 void catchAlarm(int signo) {
     printf("Income threshold reached.\n");
-    clearIPCs();
+    exitingProgram();
 }
 
 

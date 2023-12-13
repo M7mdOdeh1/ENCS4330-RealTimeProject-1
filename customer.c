@@ -12,6 +12,7 @@ int randomInRange(int min_range, int max_range) {
     return (int) (min_range +  (rand() % (max_range - min_range)));
 }
 
+
 int main(int argc, char *argv[])
 {
     pid_t parentPid = atoi(argv[1]);
@@ -60,7 +61,7 @@ int main(int argc, char *argv[])
     Access the semaphore set
     */
     int semid_items;
-    if ( (semid_items= semget((int) ppid, 2, 0)) == -1 ) {
+    if ( (semid_items= semget((int) parentPid, 2, 0)) == -1 ) {
         perror("semget -- consumer -- access");
         exit(3);
     }
@@ -159,15 +160,16 @@ int main(int argc, char *argv[])
         - Shortest length
         - Best behavior
     */ 
+
+
     for (int i = 1; i < memptr_cashiers->numCashiers; i++) {
+
         //skip the non active cashiers
         if (memptr_cashiers->cashiers[i].isActive == 0) {
-            printf("yes\n");
             continue;
         }
         
         int numItemWithScanTime = (1 + memptr_cashiers->cashiers[i].numItemsInCarts) * memptr_cashiers->cashiers[i].scanTime;
-        printf("numItemWithScanTime: %d\n", numItemWithScanTime);
         // check if the current line is better than the best line
         if ( numItemWithScanTime < bestLineNumItemsWithScanTime) {
             bestLineIndex = i;
@@ -266,11 +268,14 @@ int main(int argc, char *argv[])
             memptr_items->items[IndecisOfItemsToBuy[i]].inventory += atoi(cart.items[i][1].str);
         }
 
+
         // send SIGUSR2 to the parent (project1.c) to indicate that the customer is leaving the market
         if (kill(parentPid, SIGUSR2) == SIG_ERR) {
             perror("kill -- SIGUSR2 -- Customer -- failed");
             exit(EXIT_FAILURE);
         }
+    
+        
         
         exit(0);
     }

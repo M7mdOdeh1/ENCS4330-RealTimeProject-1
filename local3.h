@@ -26,7 +26,7 @@
 
 char *trim(char *str);
 int randomInRange(int min_range, int max_range);
-void clearIPCs();
+void exitingProgram();
 void catchAlarm(int sig_num);
 void catchSIGUSR1(int sig_num);
 void catchSIGUSR2(int sig_num);
@@ -73,7 +73,10 @@ struct CASHIER{
 typedef struct CASHIER CASHIER;
 
 struct ALL_CASHIERS {
-    
+    int isCashierBehaviorThresholdReached;
+    int isIncomeThresholdReached;
+    int isCustomerThresholdReached;
+
     int numCashiers;
     CASHIER cashiers[MAX_CASHIERS];
     
