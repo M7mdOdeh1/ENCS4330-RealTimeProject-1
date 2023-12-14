@@ -115,9 +115,11 @@ void serveCustomers(){
     
     // keep serveing the customers until the queue is empty
     while (memptr_cashiers->cashiers[cashier_index].numCustomers > 0) {
+        // acquire the semaphore
+        acquireSem(semid, 1);
+
         // serve the customer in the head of the queue
         int j = memptr_cashiers->cashiers[cashier_index].head;
-
 
         // hold SIGUSR2 signal until the customer is done
         if (sighold(SIGUSR2) == -1) {
@@ -130,10 +132,13 @@ void serveCustomers(){
             perror("kill -- cashier -- SIGUSR1");
             exit(SIGUSR1);
         }
-    
-
         int itemInTheCart = memptr_cashiers->cashiers[cashier_index].cartsQueue[j].numItems;
         float totalPrice = 0;
+
+        // release the semaphore
+        releaseSem(semid, 1);
+
+
         // scan the items in the cart
         for (int i = 0; i < itemInTheCart; i++) {
             int q = atoi(memptr_cashiers->cashiers[cashier_index].cartsQueue[j].items[i][1].str);
@@ -144,11 +149,17 @@ void serveCustomers(){
                 printf("Cashier %d is scanning item %d from type %d\n", getpid(), j+1, i+1);
                 fflush(stdout);
 
+                // acquire the semaphore
+                acquireSem(semid, 1);
+
                 // update the quantity of the item in the cart
-                memptr_cashiers->cashiers[cashier_index].  cartsQueue[j].quantityOfItems--;
+                memptr_cashiers->cashiers[cashier_index].cartsQueue[j].quantityOfItems--;
                 memptr_cashiers->cashiers[cashier_index].numItemsInCarts--;
                 // increase the total price
                 totalPrice += atof(memptr_cashiers->cashiers[cashier_index].cartsQueue[j].items[i][2].str);
+
+                // release the semaphore
+                releaseSem(semid, 1);
                 // sleep for the scan time of the item
                 sleep(memptr_cashiers->cashiers[cashier_index].scanTime);
             }
@@ -158,6 +169,8 @@ void serveCustomers(){
         cashierIncome += totalPrice;
         printf("cashier %d income is: %f===============================\n", cashier_index, cashierIncome);
         fflush(stdout);
+
+        // check if the cashier income threshold is reached
         if (cashierIncome >= CASHIER_THRESHOLD) {
             // kill alarmer child process
             if (kill(pid, SIGINT) == -1) {
@@ -368,7 +381,6 @@ void catchAlarm(int sig_num) {
 catch SIGINT for parent process to indicate kill alarmer child process
 before leaving the market
 */
-
 void catchSIGINT(int sig_num) {
     printf("Cashier %d received SIGINT\n", getpid());
     fflush(stdout);

@@ -132,13 +132,9 @@ int main(int argc, char *argv[])
     }
     fclose(file); // closing the file
 
-
-
      // Declare an array of Item structures
     struct Item items[MAX_ITEMS];
-
-    
-    
+  
 
     char line2[MAX_LINE_LENGTH];
     int itemCount = 0;
@@ -280,7 +276,7 @@ int main(int argc, char *argv[])
             exit(5);
         }
 
-        if (cash_pid == 0) {
+          if (cash_pid == 0) {
             // Child process
             
             char iStr[10], BEHAVIOR_CHANGE_SECStr[10], CASHIER_THRESHOLDSTR[10], *key_cashiersStr, *semidStr;
