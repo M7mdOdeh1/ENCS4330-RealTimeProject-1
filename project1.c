@@ -29,7 +29,7 @@ int randomInRange(int min_range, int max_range) {
 
 
 // global variables
-int shmid, semid, shmid_cashiers, semid_cashiers;
+int shmid, semid, shmid_cashiers;
 char *shmptr, *shmptr_cashiers;
 
 int cahsiersLeftTheMarket = 0;
@@ -108,7 +108,6 @@ int main(int argc, char *argv[])
         // Assign values based on variable name
         if (strcmp(varName, "CASHIER_THRESHOLD") == 0) {
             CASHIER_THRESHOLD = (float)value;
-            printf("CASHIER_THRESHOLD = %f\n", CASHIER_THRESHOLD);
         } else if (strcmp(varName, "NUM_CUS_PERSEC") == 0) {
             MAX_CUSTOMER_PERSEC = max;
             MIN_CUSTOMER_PERSEC = min;
@@ -169,7 +168,7 @@ int main(int argc, char *argv[])
 
     pid_t pid = getpid();
     static struct  MEMORY memory;
-    static ushort  start_val[2] = {1, 1};
+    static ushort  start_val[2] = {1, 1};  
     union semun    arg;
 
 
@@ -237,7 +236,7 @@ int main(int argc, char *argv[])
         perror("ftok for all cashiers failed");
         exit(EXIT_FAILURE);
     }
-
+    
     // create shared memory for all cashiers
     shmid_cashiers = shmget(key_cashiers, sizeof(struct CASHIER) * NUM_CASHIERS, 0666 | IPC_CREAT);
     if (shmid_cashiers == -1) {
@@ -284,16 +283,18 @@ int main(int argc, char *argv[])
         if (cash_pid == 0) {
             // Child process
             
-            char iStr[10], BEHAVIOR_CHANGE_SECStr[10], CASHIER_THRESHOLDSTR[10], *key_cashiersStr;
+            char iStr[10], BEHAVIOR_CHANGE_SECStr[10], CASHIER_THRESHOLDSTR[10], *key_cashiersStr, *semidStr;
             key_cashiersStr = (char *)malloc(sizeof(char) * 32);
+            semidStr = (char *)malloc(sizeof(char) * 32);
 
             sprintf(key_cashiersStr, "%d",key_cashiers);
             sprintf(iStr, "%d", i);
             sprintf(BEHAVIOR_CHANGE_SECStr, "%d", BEHAVIOR_CHANGE_SEC);
             sprintf(CASHIER_THRESHOLDSTR, "%f", CASHIER_THRESHOLD);
+            sprintf(semidStr, "%d", semid);
             
             
-            execl("./cashier", "./cashier", key_cashiersStr, iStr, BEHAVIOR_CHANGE_SECStr, CASHIER_THRESHOLDSTR, (char *)0);
+            execl("./cashier", "./cashier", key_cashiersStr, iStr, BEHAVIOR_CHANGE_SECStr, CASHIER_THRESHOLDSTR, semidStr, (char *)0);
             perror("execl -- cashier -- failed");
             exit(6);
 
@@ -394,6 +395,20 @@ int main(int argc, char *argv[])
 
 // Signal handler for SIGINT
 void catchSIGINT(int signo) {
+
+    // if the spawner process (child of project1) catch the signal
+    if (cust_spawner_pid == 0){
+
+        printf("Killing all customrs child processes...\n");
+        // kill all customer that are generated from the spawnner
+        for (int i = 0; i < totalCustomersSpawned; i++) {
+            kill(pids_customer[i], SIGINT);
+        }
+
+        exit(0);
+
+    }
+        
     printf("Caught SIGINT\n");
     exitingProgram();
 }
@@ -404,23 +419,17 @@ void catchSIGINT(int signo) {
  before exiting the program
 */
 void exitingProgram() {
-    if (temp==1)
+    if (temp==1 || cust_spawner_pid == 0)
         return;
-
     temp=1;
-
-    printf("Killing all child processes...\n");
-    // kill all cashiers
-    for (int i = 0; i < NUM_CASHIERS; i++) {
-        kill(all_cashiers.cashiers[i].id, SIGINT);
-    }
 
     // kill the customer spawner
     kill(cust_spawner_pid, SIGINT);
 
-    // kill the customers
-    for (int i = 0; i < totalCustomersSpawned; i++) {
-        kill(pids_customer[i], SIGINT);
+    printf("Killing all cashier processes...\n");
+    // kill all cashiers
+    for (int i = 0; i < NUM_CASHIERS; i++) {
+        kill(all_cashiers.cashiers[i].id, SIGINT);
     }
 
     printf("Clearing IPCs...\n");
@@ -465,41 +474,97 @@ void exitingProgram() {
 // Signal handler for SIGUSR1 to indicate that a cashier has left the market
 void catchSIGUSR1(int signo) {
     cahsiersLeftTheMarket++;
-
+    printf("left^^^^^^^^^^^^^^^^^^^^^^^^\n");
+    fflush(stdout);
     if(cahsiersLeftTheMarket == NUM_CASHIERS){
-        printf("Behavior threshold of Cashiers threshold reached. Sending SIGINT to all cashiers\n");
+        printf("Behavior threshold of All Cashiers reached. Sending SIGINT to all cashiers\n");
+        struct ALL_CASHIERS *memptr_cashiers;
+        memptr_cashiers = (struct ALL_CASHIERS *) shmptr_cashiers;
+        fflush(stdout);
+        // acquire the semaphore
+        acquireSem(semid, 1);
+        fflush(stdout);
+        // check if one of the thresholds is reached previously
+        if (memptr_cashiers->isCustomerThresholdReached == 0 && memptr_cashiers->isCashierBehaviorThresholdReached 
+            == 0 && memptr_cashiers->isIncomeThresholdReached == 0){
+            fflush(stdout);
+            // set the flag to indicate that the cashier behavior threshold is reached
+            memptr_cashiers->isCashierBehaviorThresholdReached = 1;
         
-        exitingProgram();
+            releaseSem(semid, 1);
+            exitingProgram();
+
+            
+        }
+        // release the semaphore
+        releaseSem(semid, 1);
+        exit(0);
+
     }
 
 }
 
 // Signal handler for SIGUSR2 to indicate that a customer has left the market
 void catchSIGUSR2(int signo) {
+    printf("__________________________IMAPTIENT CUSTOMER________________\n");
+    fflush(stdout);
     customersLeftTheMarket++;
     if(customersLeftTheMarket == CUST_IMPATIENT_TH ){
 
         struct ALL_CASHIERS *memptr_cashiers;
         memptr_cashiers = (struct ALL_CASHIERS *) shmptr_cashiers;
 
+        // acquire the semaphore
+        acquireSem(semid, 1);
+
         /* check if one of the thresholds is reached  
             (no need to exit the program again)*/
         if (memptr_cashiers->isCustomerThresholdReached == 0 && memptr_cashiers->isCashierBehaviorThresholdReached 
             == 0 && memptr_cashiers->isIncomeThresholdReached == 0){
-    
+            
+            // kill spawner
+            kill(cust_spawner_pid, SIGINT);
             // set the flag to indicate that the customer threshold is reached
             memptr_cashiers->isCustomerThresholdReached = 1;
+
+            // release the semaphore
+            releaseSem(semid, 1);
+
             printf("Customer Impatient Thresold reached. Sending SIGINT to all cashiers\n");
+
             exitingProgram();
         }
+
+        // release the semaphore
+        releaseSem(semid, 1);
+
         exit(0);
     }
 }
 
-// Signal handler for SIGRTMIN to indicate that the income increase and check the threshold
+// Signal handler for SIGALRM to indicate that the income threshold is reached
 void catchAlarm(int signo) {
     printf("Income threshold reached.\n");
     exitingProgram();
+}
+
+
+// function to acuire the semaphore
+void acquireSem(int semid, int semnum) {
+    acquire.sem_num = semnum;
+    if ( semop(semid, &acquire, 1) == -1 ) {
+        perror("semop -- project1 -- acquire");
+        exit(4);
+    }
+}
+
+// function to release the semaphore
+void releaseSem(int semid, int semnum) {
+    release.sem_num = semnum;
+    if ( semop(semid, &release, 1) == -1 ) {
+        perror("semop -- project1 -- release");
+        exit(5);
+    }
 }
 
 

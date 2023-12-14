@@ -34,6 +34,7 @@ int main(int argc, char *argv[])
 
     // sleep for the time the customer is shopping
     printf("Customer %d is shopping for %d seconds\n", cartID, buyTime);
+    fflush(stdout);
     sleep(buyTime);
 
     
@@ -45,7 +46,7 @@ int main(int argc, char *argv[])
     if ( (shmid_items = shmget((int) parentPid, 0, 0)) != -1 ) {
         // attach to the shared memory segment
         if ( (shmptr_items = (char *) shmat(shmid_items, (char *)0, 0)) == (char *) -1 ) {
-            perror("shmat -- consumer -- attach");
+            perror("shmat -- customer -- attach");
             exit(1);
         }
         memptr_items = (struct MEMORY *) shmptr_items;
@@ -53,16 +54,16 @@ int main(int argc, char *argv[])
 
     }
     else {
-        perror("shmget -- consumer -- access");
+        perror("shmget -- customer -- access");
         exit(2);
     }
 
     /*
     Access the semaphore set
     */
-    int semid_items;
-    if ( (semid_items= semget((int) parentPid, 2, 0)) == -1 ) {
-        perror("semget -- consumer -- access");
+    int semid;
+    if ( (semid= semget((int) parentPid, 2, 0)) == -1 ) {
+        perror("semget -- customer -- access");
         exit(3);
     }
 
@@ -84,6 +85,9 @@ int main(int argc, char *argv[])
     
     // array of indexs of items to buy
     int IndecisOfItemsToBuy[numItemsToBuy];
+
+    // acquire the semaphore
+    acquireSem(semid, 0);
 
     // choose random items with random quantities to buy
     for (int i = 0; i < numItemsToBuy; i++) {
@@ -112,6 +116,8 @@ int main(int argc, char *argv[])
         }
 
     }
+    // release the semaphore
+    releaseSem(semid, 0);
    
 
     printf("----------------------------------------\n");
@@ -145,6 +151,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     
+
     // access the cashiers shared memory
     struct ALL_CASHIERS *memptr_cashiers;
     memptr_cashiers = (struct ALL_CASHIERS *) shmptr_cashier;
@@ -161,7 +168,9 @@ int main(int argc, char *argv[])
         - Best behavior
     */ 
 
-
+    // acqurie the semaphore
+    acquireSem(semid, 1);
+    
     for (int i = 1; i < memptr_cashiers->numCashiers; i++) {
 
         //skip the non active cashiers
@@ -206,12 +215,11 @@ int main(int argc, char *argv[])
     memptr_cashiers->cashiers[bestLineIndex].numItemsInCarts += cart.quantityOfItems;
     // update the tail of the line
     memptr_cashiers->cashiers[bestLineIndex].tail = (memptr_cashiers->cashiers[bestLineIndex].tail + 1) % MAX_CUSTOMERS;
-
-    
     
     // check if iam the first customer in the line
     if (memptr_cashiers->cashiers[bestLineIndex].numCustomers == 1) {
         printf("sending signal to cashier %d\n", memptr_cashiers->cashiers[bestLineIndex].id);
+        fflush(stdout);
         // signal the cashier that there is a customer in the line
         if (kill(memptr_cashiers->cashiers[bestLineIndex].id, SIGUSR1) == SIG_ERR) {
             perror("kill -- SIGUSR1 -- Customer -- failed");
@@ -219,27 +227,41 @@ int main(int argc, char *argv[])
         }
     }
 
+    // release the semaphore
+    releaseSem(semid, 1);
+
 
     // signal handler for the alarm
     if ( sigset(SIGALRM, catchAlarm) == SIG_ERR) {
-        perror("Sigset can not set SIGALRM");
+        perror("Sigset can not set SIGALRM -- customer");
         exit(SIGALRM);
+    }
+
+    // signal handler for the SIGINT
+    if ( sigset(SIGINT, catchSIGINT) == SIG_ERR) {
+        perror("Sigset can not set SIGINT -- customer");
+        exit(SIGINT);
     }
 
     // singal user1 handler to indicate that the customer is on the cashier 
     if ( sigset(SIGUSR1, catchSIGUSR1) == SIG_ERR) {
-        perror("Sigset can not set SIGUSR1");
+        perror("Sigset can not set SIGUSR1 -- customer");
         exit(SIGUSR1);
     }
 
     // sleep for the time the customer is waiting in line
-    printf("Customer %d is waiting in line %d for %d seconds\n", cartID, bestLineIndex, waitTime);
+    printf("Customer %d is waiting in line %d for at maximum %d seconds\n", cartID, bestLineIndex, waitTime);
+    fflush(stdout);
     alarm(waitTime); // set the alarm for the remaining time
 
     int quantityOfItems = cart.quantityOfItems;
     pause();
 
     if (!isOnCashier) {
+
+        // acquire the semaphore
+        acquireSem(semid, 1);
+
         // get the index of the customer in the line and shift the carts in the line
         for (int i = 0; i < memptr_cashiers->cashiers[bestLineIndex].numCustomers; i++) {
             if (memptr_cashiers->cashiers[bestLineIndex].cartsQueue[i].customerPID == getpid()) {
@@ -256,25 +278,36 @@ int main(int argc, char *argv[])
         memptr_cashiers->cashiers[bestLineIndex].cartsQueue[memptr_cashiers->cashiers[bestLineIndex].numCustomers].numItems = 0;
         memptr_cashiers->cashiers[bestLineIndex].cartsQueue[memptr_cashiers->cashiers[bestLineIndex].numCustomers].quantityOfItems = 0;
         
+        // Release the semaphore
+
         printf("Customer %d is leaving the store without buying anything\n", cartID);
+        fflush(stdout);
        
         
         // The customer may be in the middle of the line, so we need to update the tail
         memptr_cashiers->cashiers[bestLineIndex].tail = (memptr_cashiers->cashiers[bestLineIndex].tail - 1) % MAX_CUSTOMERS;
 
+        
 
+
+        // acquire the semaphore
+        acquireSem(semid, 0);
         // Return the items to the market inventory
         for (int i = 0; i < numItemsToBuy; i++) {
             memptr_items->items[IndecisOfItemsToBuy[i]].inventory += atoi(cart.items[i][1].str);
         }
 
+        // release the semaphore
+        releaseSem(semid, 0);
 
-        // send SIGUSR2 to the parent (project1.c) to indicate that the customer is leaving the market
+        // send SIGUSR2 to the parent (project1.c) to indicate that the customer is leaving the market because impatient
         if (kill(parentPid, SIGUSR2) == SIG_ERR) {
             perror("kill -- SIGUSR2 -- Customer -- failed");
             exit(EXIT_FAILURE);
         }
-    
+        sleep(0.01); // To make the signal reach the parent sequentially
+        // release the semaphore
+        releaseSem(semid, 1);
         
         
         exit(0);
@@ -288,6 +321,7 @@ int main(int argc, char *argv[])
     
     // exit the market
     printf("Customer %d is leaving the store after buying %d items\n", cartID, quantityOfItems);
+    fflush(stdout);
     exit(0);    
 
 
@@ -302,4 +336,26 @@ void catchSIGUSR1(int sig_num) {
     //clear the alarm since the customer is on the cashier
     alarm(0);
     isOnCashier = 1;
+}
+
+void catchSIGINT(int sig_num) {
+    exit(0);
+}
+
+// function to acuire the semaphore
+void acquireSem(int semid, int semnum) {
+    acquire.sem_num = semnum;
+    if ( semop(semid, &acquire, 1) == -1 ) {
+        perror("semop -- consumer -- acquire");
+        exit(4);
+    }
+}
+
+// function to release the semaphore
+void releaseSem(int semid, int semnum) {
+    release.sem_num = semnum;
+    if ( semop(semid, &release, 1) == -1 ) {
+        perror("semop -- consumer -- release");
+        exit(5);
+    }
 }

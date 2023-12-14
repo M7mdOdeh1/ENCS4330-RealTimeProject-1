@@ -35,6 +35,10 @@ void catchSIGINT(int signo);
 
 void moveQueueToOtherCashiers();
 
+void acquireSem(int semid, int semnum);
+void releaseSem(int semid, int semnum);
+
+
 struct Item {
     char name[50];
     int inventory;

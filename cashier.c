@@ -8,13 +8,15 @@ cahirer.c
 struct ALL_CASHIERS *memptr_cashiers;
 int cashier_index;
 int BEHAVIOR_CHANGE_SEC;
+int semid;
+
 
 float cashierIncome = 0;
 float CASHIER_THRESHOLD;
 pid_t pid;
 
 int main(int argc, char *argv[]) {
-    if (argc != 5) {
+    if (argc != 6) {
         printf("Usage: %s <cashier_id>\n", argv[0]);
         exit(1);
     }
@@ -24,6 +26,7 @@ int main(int argc, char *argv[]) {
     cashier_index = atoi(argv[2]);
     BEHAVIOR_CHANGE_SEC = atoi(argv[3]);
     CASHIER_THRESHOLD = atof(argv[4]);
+    semid = atoi(argv[5]);
 
 
     // connect to the shared memory segment for the cashiers
@@ -43,7 +46,14 @@ int main(int argc, char *argv[]) {
     // access the cashiers shared memory
     memptr_cashiers = (struct ALL_CASHIERS *) shmptr_cashier;
 
+    // access the semaphore
+    if ( (semid= semget((int) getppid(), 2, 0)) == -1 ) {
+        perror("semget -- cashier -- access");
+        exit(3);
+    }
+
     printf("Cashier %d has id %d\n", cashier_index, memptr_cashiers->cashiers[cashier_index].id);
+    fflush(stdout);
 
     // fork a child process to indicate that the cashier behavior is 0, then leave the market
     pid = fork();
@@ -77,6 +87,12 @@ int main(int argc, char *argv[]) {
     if (signal (SIGINT, catchSIGINT) == SIG_ERR) {
         perror("signal -- cashier -- SIGINT");
         exit(SIGINT);
+    }
+
+    // signal handler for SIGUSR2
+    if (signal (SIGUSR2, catchSIGUSR2) == SIG_ERR) {
+        perror("signal -- cashier -- SIGUSR2");
+        exit(SIGUSR2);
     }
 
     while (1){
@@ -122,12 +138,14 @@ void serveCustomers(){
         for (int i = 0; i < itemInTheCart; i++) {
             int q = atoi(memptr_cashiers->cashiers[cashier_index].cartsQueue[j].items[i][1].str);
             printf("quantity of item type %d is: %d\n", i+1, q);
+            fflush(stdout);
             // loop through the quantity of each item
             for (int j=0; j < q; j++) {
                 printf("Cashier %d is scanning item %d from type %d\n", getpid(), j+1, i+1);
+                fflush(stdout);
 
                 // update the quantity of the item in the cart
-                memptr_cashiers->cashiers[cashier_index].cartsQueue[j].quantityOfItems--;
+                memptr_cashiers->cashiers[cashier_index].  cartsQueue[j].quantityOfItems--;
                 memptr_cashiers->cashiers[cashier_index].numItemsInCarts--;
                 // increase the total price
                 totalPrice += atof(memptr_cashiers->cashiers[cashier_index].cartsQueue[j].items[i][2].str);
@@ -139,7 +157,7 @@ void serveCustomers(){
         // update the cashier income
         cashierIncome += totalPrice;
         printf("cashier %d income is: %f===============================\n", cashier_index, cashierIncome);
-        printf("cashier %d threshold is: %f========**********=========\n", cashier_index, CASHIER_THRESHOLD);
+        fflush(stdout);
         if (cashierIncome >= CASHIER_THRESHOLD) {
             // kill alarmer child process
             if (kill(pid, SIGINT) == -1) {
@@ -147,23 +165,34 @@ void serveCustomers(){
                 exit(SIGINT);
             }
 
-            // check if one of the thresholds is reached from an other cashier or customer
-            if (memptr_cashiers->isCashierBehaviorThresholdReached==0 && memptr_cashiers->isIncomeThresholdReached==0
-             && memptr_cashiers->isCustomerThresholdReached==0) {
-
+            acquireSem(semid, 1);
+            
+            if (memptr_cashiers->isCashierBehaviorThresholdReached == 0 && memptr_cashiers->isCustomerThresholdReached == 0
+                && memptr_cashiers->isIncomeThresholdReached == 0) {
+                
                 // set the flag to indicate that the cashier income threshold is reached
                 memptr_cashiers->isIncomeThresholdReached = 1;
 
-                // send SIGUSR2 to the parent process to indicate that the cashier is leaving
-                if (kill(getppid(), SIGUSR2) == -1) {
-                    perror("kill -- cashier -- SIGUSR2");
+                // send SIGALRM to the parent process to indicate that the income threshold is reached
+                if (kill(getppid(), SIGALRM) == -1) {
+                    perror("kill -- cashier -- SIGLARM -- cashierIncome >= CASHIER_THRESHOLD");
                     exit(SIGUSR2);
                 }
-            }
-            else{
-                printf("cashier threshold is reached *****************************************\n");
 
+                sleep(0.01); // To make the signal reach the parent sequentially
+                // release the semaphore
+                releaseSem(semid, 1);
+                
+                
+                
+            
+                printf("cashier income threshold is reached *****************************************\n");
+                fflush(stdout);
+                exit(0);
             }
+            releaseSem(semid, 1);
+
+            
             exit(0);
         }
 
@@ -268,6 +297,7 @@ catch SIGUSR1 for parent process to serve customers
 */
 void catchSIGUSR1(int sig_num) {
     printf("Cashier %d received SIGUSR1\n", getpid());
+    fflush(stdout);
     serveCustomers();
    
     
@@ -279,15 +309,24 @@ catch SIGUSR2 for parent process to indicate that the cashier
 */
 void catchSIGUSR2(int sig_num) {
     printf("Cashier %d received SIGUSR2\n", getpid());
+    fflush(stdout);
     
+    // acquire the semaphore
+    acquireSem(semid, 1);
     // make this cashier non active
     memptr_cashiers->cashiers[cashier_index].isActive = 0;
 
+    
     // send SIGUSR1 to the parent process to indicate that the cashier is done
     if (kill(getppid(), SIGUSR1) == -1) {
         perror("kill -- cashier -- SIGUSR1");
         exit(SIGUSR1);
     }
+    sleep(0.001); // To make the signal reach the parent sequentially
+
+    // release the semaphore
+    releaseSem(semid, 1);
+    
 
     moveQueueToOtherCashiers();
     
@@ -302,29 +341,21 @@ this function is used only by the child of the cashier process
 */
 void catchAlarm(int sig_num) {
     printf("Cashier %d received SIGALRM\n", getpid());
+    fflush(stdout);
     // decrese the cashier behavior by 1
     memptr_cashiers->cashiers[cashier_index].behavior--;
     
+    
+
     // if the cashier behavior is 0, then leave the market
     if (memptr_cashiers->cashiers[cashier_index].behavior == 0) {
-        printf("Cashier %d is leaving the market because his behavior dropped to zero\n", getpid());
+        printf("Cashier %d Behavior dropped to zero (checking if he serve the customer rn)\n", getppid());
+        fflush(stdout);
 
-        // check if one of the thresholds is reached from an other cashier or customer
-        if (memptr_cashiers->isCashierBehaviorThresholdReached==0 && memptr_cashiers->isIncomeThresholdReached==0
-         && memptr_cashiers->isCustomerThresholdReached==0) {
-
-            // set the flag to indicate that the cashier behavior threshold is reached
-            memptr_cashiers->isCashierBehaviorThresholdReached = 1;
-
-            // send SIGUSR2 to the parent process to indicate that the cashier is leaving
-            if (kill(getppid(), SIGUSR2) == -1) {
-                perror("kill -- cashier -- SIGUSR2");
-                exit(SIGUSR2);
-            }
-        }
-        else{
-            printf("cashier threshold is reached *****************************************\n");
-
+        // send SIGUSR2 to the parent process to indicate that the cashier is done
+        if (kill(getppid(), SIGUSR2) == -1) {
+            perror("kill -- cashier -- SIGUSR1");
+            exit(SIGUSR2);
         }
     
         exit(0);
@@ -340,10 +371,30 @@ before leaving the market
 
 void catchSIGINT(int sig_num) {
     printf("Cashier %d received SIGINT\n", getpid());
+    fflush(stdout);
     // kill alarmer child process
     if (kill(pid, SIGINT) == -1) {
         perror("kill -- catchSIGINT -- cashier ");
         exit(SIGINT);
     }
     exit(0);
+}
+
+
+// function to acuire the semaphore
+void acquireSem(int semid, int semnum) {
+    acquire.sem_num = semnum;
+    if ( semop(semid, &acquire, 1) == -1 ) {
+        perror("semop -- cashier -- acquire");
+        exit(4);
+    }
+}
+
+// function to release the semaphore
+void releaseSem(int semid, int semnum) {
+    release.sem_num = semnum;
+    if ( semop(semid, &release, 1) == -1 ) {
+        perror("semop -- cashier -- release");
+        exit(5);
+    }
 }
