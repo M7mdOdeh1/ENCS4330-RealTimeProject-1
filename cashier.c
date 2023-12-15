@@ -4,6 +4,7 @@ cahirer.c
 */
 
 #include "local3.h"
+#include "local4.h"
 
 struct ALL_CASHIERS *memptr_cashiers;
 int cashier_index;
@@ -14,6 +15,10 @@ int semid;
 float cashierIncome = 0;
 float CASHIER_THRESHOLD;
 pid_t pid;
+key_t keyMsgQueue = 1234;
+int msgQueueId; // Message queue ID
+PositionUpdateMessage msg;
+
 
 int main(int argc, char *argv[]) {
     if (argc != 6) {
@@ -52,6 +57,12 @@ int main(int argc, char *argv[]) {
         exit(3);
     }
 
+    // access the message queue
+    if ((msgQueueId = msgget(keyMsgQueue, 0)) == -1) {
+        perror("msgget -- cashier -- access");
+        exit(2);
+    }
+
     printf("Cashier %d has id %d\n", cashier_index, memptr_cashiers->cashiers[cashier_index].id);
     fflush(stdout);
 
@@ -61,6 +72,7 @@ int main(int argc, char *argv[]) {
         perror("fork -- cashier -- failed");
         exit(10);
     }
+
     else if (pid == 0) {
         // child process
         // signal handler for SIGALRM
@@ -223,11 +235,7 @@ void serveCustomers(){
         memptr_cashiers->cashiers[cashier_index].cartsQueue[j].numItems = 0;
         memptr_cashiers->cashiers[cashier_index].cartsQueue[j].quantityOfItems = 0;
         memset(memptr_cashiers->cashiers[cashier_index].cartsQueue[j].items, 0, sizeof(memptr_cashiers->cashiers[cashier_index].cartsQueue[j].items));
-        // for (int i = 0; i < MAX_ITEMS; i++) {
-        //     strcpy(memptr_cashiers->cashiers[cashier_index].cartsQueue[j].items[i][0].str, "");
-        //     strcpy(memptr_cashiers->cashiers[cashier_index].cartsQueue[j].items[i][1].str, "");
-        //     strcpy(memptr_cashiers->cashiers[cashier_index].cartsQueue[j].items[i][2].str, "");
-        // }
+        
 
         // update the head of the queue
         memptr_cashiers->cashiers[cashier_index].head = (memptr_cashiers->cashiers[cashier_index].head + 1) % MAX_CUSTOMERS;
@@ -329,6 +337,17 @@ void catchSIGUSR2(int sig_num) {
     // make this cashier non active
     memptr_cashiers->cashiers[cashier_index].isActive = 0;
 
+    // update the position of the cashier in the gui
+    msg.msgType = MSG_POS_UPDATE;
+    msg.id = cashier_index;
+    msg.x = 0;
+    msg.y = 0;
+    msg.state = 1; // indicate that the cashier is not active
+    // send the message to the gui process
+    if (msgsnd(msgQueueId, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+        perror("msgsnd -- cashier -- SIGUSR2");
+        exit(2);
+    }
     
     // send SIGUSR1 to the parent process to indicate that the cashier is done
     if (kill(getppid(), SIGUSR1) == -1) {
@@ -364,7 +383,8 @@ void catchAlarm(int sig_num) {
     if (memptr_cashiers->cashiers[cashier_index].behavior == 0) {
         printf("Cashier %d Behavior dropped to zero (checking if he serve the customer rn)\n", getppid());
         fflush(stdout);
-
+        
+        
         // send SIGUSR2 to the parent process to indicate that the cashier is done
         if (kill(getppid(), SIGUSR2) == -1) {
             perror("kill -- cashier -- SIGUSR1");
@@ -384,6 +404,14 @@ before leaving the market
 void catchSIGINT(int sig_num) {
     printf("Cashier %d received SIGINT\n", getpid());
     fflush(stdout);
+    // The child Alarmer process
+    if (pid == 0) {
+        // clear the alarm
+        alarm(0);
+        exit(0);
+    }
+
+
     // kill alarmer child process
     if (kill(pid, SIGINT) == -1) {
         perror("kill -- catchSIGINT -- cashier ");

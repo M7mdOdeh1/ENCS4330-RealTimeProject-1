@@ -1,12 +1,16 @@
 /*
 
 Project 1
+Mohammed Owda 
 Mahmoud Hamdan
+Yazeed Hamdan
+Mohammad abu shams
 
 */
 
 
 #include "local3.h"
+#include "local4.h"
 
 
 
@@ -31,6 +35,7 @@ int randomInRange(int min_range, int max_range) {
 // global variables
 int shmid, semid, shmid_cashiers;
 char *shmptr, *shmptr_cashiers;
+pid_t gui_pid;
 
 int cahsiersLeftTheMarket = 0;
 int customersLeftTheMarket = 0;
@@ -44,6 +49,8 @@ int temp=0;
 struct ALL_CASHIERS all_cashiers;
 int pids_customer[MAX_CUSTOMERS];
 pid_t cust_spawner_pid;
+key_t keyMsgQueue = 1234;
+int msgQueueId;
 
 int main(int argc, char *argv[])
 {
@@ -52,7 +59,6 @@ int main(int argc, char *argv[])
     	fprintf(stderr, "Usage: %s message\n", *argv);
     	exit(-1);
     }
-
 
     float CASHIER_THRESHOLD;
     int CASHIER_BEHAVIOR;
@@ -64,6 +70,8 @@ int main(int argc, char *argv[])
     int MIN_BUY_TIME;
     int WAIT_TIME;
     int BEHAVIOR_CHANGE_SEC;
+    int MIN_BEHAVIOR_CHANGE_SEC;
+    int MAX_BEHAVIOR_CHANGE_SEC;
 
 
 
@@ -126,7 +134,8 @@ int main(int argc, char *argv[])
         } else if (strcmp(varName, "CASHIER_BEHAVIOR") == 0) {
             CASHIER_BEHAVIOR = value;
         } else if (strcmp(varName, "BEHAVIOR_CHANGE_SEC") == 0) {
-            BEHAVIOR_CHANGE_SEC = value;
+            MAX_BEHAVIOR_CHANGE_SEC = max;
+            MIN_BEHAVIOR_CHANGE_SEC = min;
         }
         
     }
@@ -239,6 +248,7 @@ int main(int argc, char *argv[])
         perror("shmget for all cashiers failed");
         exit(EXIT_FAILURE);
     }
+    
 
     // attach to the shared memory segment
     shmptr_cashiers = (char *) shmat(shmid_cashiers, (char)0, 0);
@@ -252,23 +262,10 @@ int main(int argc, char *argv[])
     all_cashiers.isIncomeThresholdReached = 0;
     all_cashiers.isCustomerThresholdReached = 0;
     
-    
     struct CASHIER cashier ;
 
     // Forking and executing child processes for cashiers
     for (int i = 0; i < NUM_CASHIERS; i++) {
-        
-        // // Initialize the carts queue for each cashier
-        // for (int j = 0; j < 1; j++) {
-        //     all_cashiers.cashiers[i].cartsQueue[j].numItems = 1;         // Or any initial value
-        //     all_cashiers.cashiers[i].cartsQueue[j].quantityOfItems = 2;  // Or any initial value
-        //     // Initialize the items in each cart (if needed)
-        //     for (int k = 0; k < 1; k++) {
-        //         strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][0].str, "A"); // Empty string or initial value
-        //         strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][1].str, "2"); // Empty string or initial value
-        //         strcpy(all_cashiers.cashiers[i].cartsQueue[j].items[k][2].str, "100"); // Empty string or initial value
-        //     }
-        // }
 
         pid_t cash_pid = fork();
         if (cash_pid == -1) {
@@ -278,7 +275,8 @@ int main(int argc, char *argv[])
 
           if (cash_pid == 0) {
             // Child process
-            
+            BEHAVIOR_CHANGE_SEC = randomInRange(MIN_BEHAVIOR_CHANGE_SEC, MAX_BEHAVIOR_CHANGE_SEC);
+
             char iStr[10], BEHAVIOR_CHANGE_SECStr[10], CASHIER_THRESHOLDSTR[10], *key_cashiersStr, *semidStr;
             key_cashiersStr = (char *)malloc(sizeof(char) * 32);
             semidStr = (char *)malloc(sizeof(char) * 32);
@@ -312,16 +310,56 @@ int main(int argc, char *argv[])
 
 
     }
-    
+
+     
     // copy the cashiers struct to the shared memory segment of all cashiers
-    memcpy(shmptr_cashiers, (char *) &all_cashiers, sizeof(all_cashiers));
+    memcpy(shmptr_cashiers, (char *) &all_cashiers, sizeof(struct ALL_CASHIERS));
 
     // print all_cashiers
     for (int i = 0; i < all_cashiers.numCashiers; i++) {
         printf("Cashier %d has %d customers\n", all_cashiers.cashiers[i].id, all_cashiers.cashiers[i].numCustomers);
     }
 
+    // fork and exec opengl (gui) process
+    gui_pid = fork();
+    if (gui_pid == -1) {
+        perror("fork gui failed");
+        exit(5);
+    }
+    // GUI Process
+    if (gui_pid == 0) {
+        char *keyItemShmStr, *keyCashierShmStr;
+        keyItemShmStr = (char *)malloc(sizeof(char) * 32);
+        keyCashierShmStr = (char *)malloc(sizeof(char) * 32);
+
+        sprintf(keyItemShmStr, "%d", (int)pid);
+        sprintf(keyCashierShmStr, "%d", (int)key_cashiers);
+
+        execl("./gui", "./gui", keyItemShmStr, keyCashierShmStr, (char *)0);
+        perror("execl -- gui -- failed");
+        exit(6);
+    }
+
+    msgQueueId = msgget(keyMsgQueue, 0666 | IPC_CREAT);
+    if (msgQueueId == -1) {
+        perror("msgget");
+        return 1;
+    }
     
+    // PositionUpdateMessage msg;
+    // msg.msgType = MSG_POS_UPDATE;
+    // msg.id = 0; // Assuming 0 is the ID for the first cashier
+    // msg.x = 100; // New X position
+    // msg.y = 100; // New Y position
+    // msg.state = 0; // State (not used in this example)
+
+    // if (msgsnd(msgQueueId, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+    //     perror("msgsnd");
+    //     return 1;
+    // }
+
+
+   
 
     // Customer Spawner
     cust_spawner_pid = fork();
@@ -419,6 +457,12 @@ void exitingProgram() {
         return;
     temp=1;
 
+    // kill opengl process
+    if (kill(gui_pid, SIGINT) == -1) {
+        perror("kill -- gui -- failed");
+        exit(1);
+    }
+
     // kill the customer spawner
     kill(cust_spawner_pid, SIGINT);
 
@@ -458,6 +502,12 @@ void exitingProgram() {
     if (shmctl(shmid_cashiers, IPC_RMID, (struct shmid_ds *) 0) == -1) {
         perror("shmctl IPC_RMID failed -- all cashiers");
         exit(EXIT_FAILURE);
+    }
+
+    // remove the message queue
+    if (msgctl(msgQueueId, IPC_RMID, NULL) == -1) {
+        perror("msgctl");
+        return;
     }
 
     printf("IPCs cleared successfully\n");

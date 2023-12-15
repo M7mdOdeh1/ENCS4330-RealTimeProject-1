@@ -1,117 +1,255 @@
-#include <GL/glut.h> // Make sure to include the appropriate header for your setup
+#include <GL/glut.h>
+#include <stdlib.h>
 #include "local3.h"
-// Assuming global arrays/lists of cashiers and customers, and their counts
-
-int fram_rate = 1000 / 60;
-
-// Structure to represent a customer
-typedef struct {
-    float x, y, z; // Position of the customer
-    // Add more attributes as needed (e.g., color, size)
-} Customer;
+#include "local4.h"
 
 
-// Structure to represent a cashier
-typedef struct {
-    float x, y, z; // Position of the cashier
-    int queueLength; // Number of customers in the queue
-} Cashier;
 
+int frame_rate = 1000 / 60;
+
+pid_t keyItemShm;
+key_t keyCashierShm;
+
+
+
+Cashier cashiers[MAX_CASHIERS];
+Customer customers[MAX_CUSTOMERS];
+
+
+int numCustomers = MAX_CUSTOMERS;
+int numCashiers = MAX_CASHIERS;
+int temp = 0;
+int temp2 = 0;
+int msgQueueId; // Message queue ID
+int shmid_cashiers;
+int shmid_items;
+struct ALL_CASHIERS *shm_cashiers;
+struct Item *shm_items;
+
+// Function declarations
+void displaySupermarket();
+void timerFunc(int value);
+void initOpenGL();
 void drawCashier(Cashier cashier);
 void drawCustomer(Customer customer);
-void drawSupermarketLayout();
-void initOpenGL();
-void displaySupermarket();
 void drawRectangle(float x, float y, float width, float height);
 void drawCircle(float cx, float cy, float radius, int num_segments);
-void drawRectangle(float x, float y, float width, float height);
+void removeCustomerFromCashier(int customerId, int x, int y, int state);
+void addCustomerToCashier(int customerId, int x, int y);
+void drawSupermarketLayout();
 
 
-Cashier cashiers[10];
-Customer customers[10];
 
-int numCustomers = 10;
-int numCashiers = 3;
+// // function to connect to cashier shared memory
+// void connectToCashierShm() {
+//     shmid_cashiers = shmget(keyCashierShm, sizeof(struct ALL_CASHIERS) * 10, 0666 | IPC_CREAT);
+//     if (shmid_cashiers == -1) {
+//         perror("shmget");
+//         exit(EXIT_FAILURE);
+//     }
+//     shm_cashiers = (struct ALL_CASHIERS *)shmat(shmid_cashiers, NULL, 0);
+//     if (shm_cashiers == (void *)-1) {
+//         perror("shmat");
+//         exit(EXIT_FAILURE);
+//     }
+// }
+
+// // function to connect to item shared memory
+// void connectToItemShm() {
+//     shmid_items = shmget(keyItemShm, sizeof(struct Item) * 10, 0666 | IPC_CREAT);
+//     if (shmid_items == -1) {
+//         perror("shmget");
+//         exit(EXIT_FAILURE);
+//     }
+//     shm_items = (struct Item *)shmat(shmid_items, NULL, 0);
+//     if (shm_items == (void *)-1) {
+//         perror("shmat");
+//         exit(EXIT_FAILURE);
+//     }
+// }
 
 void initOpenGL() {
     // Set the background color (e.g., black)
     glClearColor(0.0, 0.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+
 
     // Set up the 2D projection matrix
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     gluOrtho2D(0.0, 800.0, 0.0, 600.0); // Adjust these values based on your window size
 
+    // Connect to the message queue
+    key_t key = 1234; // Use the same key as used in project1.c
+    msgQueueId = msgget(key, 0666 | IPC_CREAT);
+    if (msgQueueId == -1) {
+        perror("msgget");
+        exit(EXIT_FAILURE);
+    }
+
+    int spacing = 50.0f; // Spacing between aisles
+    for (int i = 0; i < numCashiers; i++) {
+        cashiers[i].x = 80.0f;
+        cashiers[i].y = 80.0f + i * spacing;
+        cashiers[i].queueLength = 0;
+        cashiers[i].a = 0.0f;
+        cashiers[i].b = 0.0f;
+        cashiers[i].c = 1.0f; // Blue color
+    }
+
+    for (int i = 0; i < numCustomers; i++) {
+        customers[i].x = 0.0f;
+        customers[i].y = 0.0f;
+    }
+    
+
+
     // Switch to model-view matrix
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 }
 
-
-void drawSupermarketLayout() {
-    // Set the color for the layout elements (e.g., grey)
-    glColor3f(0.5, 0.5, 0.5);
-
-    // Example: Draw aisles as rectangles
-    float aisleWidth = 50.0f;
-    float aisleHeight = 10.0f;
-    float spacing = 100.0f; // Spacing between aisles
-
-    // Assuming we have 3 aisles in the supermarket
-    for (int i = 0; i < 3; i++) {
-        float x = 100.0f; // X position of the aisle
-        float y = (i + 1) * spacing; // Y position of the aisle
-
-        glBegin(GL_QUADS);
-        glVertex2f(x, y);
-        glVertex2f(x + aisleWidth, y);
-        glVertex2f(x + aisleWidth, y + aisleHeight);
-        glVertex2f(x, y + aisleHeight);
-        glEnd();
-    }
-
-    // draw a cashier
-    cashiers[0].x = 100.0f;
-    cashiers[0].y = 100.0f;
-    cashiers[0].queueLength = 0;
-
-    cashiers[1].x = 200.0f;
-    cashiers[1].y = 100.0f;
-    cashiers[1].queueLength = 0;
-
-    drawCashier(cashiers[0]);
-    drawCashier(cashiers[1]);
-    
-
-    // You can add more elements like shelves or walls in a similar fashion
+void timerFunc(int value) {
+    // Function definition
+    glutPostRedisplay();
+    glutTimerFunc(1000 / 60, timerFunc, 0); // Re-register the timer for continuous updates
 }
 
 
-// Display callback function
+void drawSupermarketLayout() {
+    // Set the color for the layout elements (e.g., grey for aisles)
+    glColor3f(0.5, 0.5, 0.5);
+
+    // Example: Draw aisles as rectangles
+    float aisleWidth = 300.0f;
+    float aisleHeight = 10.0f;
+    float spacing = 50.0f; // Spacing between aisles
+
+    // Draw aisles
+    for (int i = 0; i < 10; i++) { 
+        float x = 100.0f; // X position of the aisle
+        float y = 80.0f + i * spacing; // Y position of the aisle
+
+        drawRectangle(x, y, aisleWidth, aisleHeight);
+    }
+
+    // Example: Draw a wall
+    glColor3f(0.7, 0.7, 0.7); // Wall color
+    drawRectangle(0.0f, 0.0f, 800.0f, 20.0f); // Wall at the bottom
+    // wall at the top
+    drawRectangle(0.0f, 600.0f - 20.0f, 800.0f, 20.0f);
+    // wall at the left
+    drawRectangle(0.0f, 0.0f, 20.0f, 600.0f);
+    // wall at the right
+    drawRectangle(800.0f - 20.0f, 20.0f, 20.0f, 600.0f);
+
+    // draw an item bar at the right beside the wall with red color
+    glColor3f(1.0, 0.0, 0.0);
+    drawRectangle(800.0f - 60.0f, 50.0f, 40.0f, 500.0f);
+
+    // // Draw the cashier desks
+    // for (int i = 0; i < numCashiers; i++) {
+    //     drawCashier(cashiers[i]);
+    // }
+}
+
+
+
 void displaySupermarket() {
     // Clear the color buffer
     glClear(GL_COLOR_BUFFER_BIT);
+    
 
     // Reset transformations
     glLoadIdentity();
 
-    // Draw the supermarket layout (you need to define this function)
+    
+
+    // Check for new messages and update positions
+    PositionUpdateMessage msg;
+    while (msgrcv(msgQueueId, &msg, sizeof(msg) - sizeof(long), MSG_POS_UPDATE, IPC_NOWAIT) != -1) {
+        if (msg.id < numCashiers) { // Check if the message is for a cashier
+            // change color of the cashier to dark grey
+            cashiers[msg.id].a = 0.3f;
+            cashiers[msg.id].b = 0.3f;
+            cashiers[msg.id].c = 0.3f;
+
+        } else { // Message is for a customer
+            int customerId = msg.id - numCashiers;
+            if (customerId < numCustomers) {
+                // Update customer position directly
+                if (msg.state == 0) {
+                    addCustomerToItemBar(customerId);
+                }
+                else if (msg.state == 1) {
+                    addCustomerToCashier(customerId, msg.x, msg.y);
+                }
+                else {
+                    removeCustomerFromCashier(customerId, msg.x, msg.y, msg.state);
+                }
+
+            }
+        }
+    }
+
+    // Draw the supermarket layout
     drawSupermarketLayout();
 
     // Draw cashiers and customers
     for (int i = 0; i < numCashiers; i++) {
         drawCashier(cashiers[i]);
     }
-
     for (int i = 0; i < numCustomers; i++) {
         drawCustomer(customers[i]);
     }
 
-    moveToAisle(&cashiers[0], 1); // Move the first cashier to the second aisle
-    glutPostRedisplay(); // Mark the window as needing to be redisplayed
-
-    // Swap buffers (if using double buffering)
+    // Swap buffers
     glutSwapBuffers();
+}
+
+void addCustomerToItemBar(int customerId) {
+    int c = customerId % 20;
+    if (temp == 20){
+        temp = 0;
+        temp2++;
+    }
+    temp++;
+    // add customer to item bar
+    customers[customerId].x = 740.0f - 25.0f * temp2;
+    customers[customerId].y = 60.0f + 4200.0f / (numCustomers) * c;
+}
+
+void addCustomerToCashier(int customerId, int x, int y) {
+    // add customer to cashier x
+    
+    customers[customerId].x =  80.0f + cashiers[x].queueLength * 25.0f;
+    customers[customerId].y = 80.0f + x * 50.0f;
+    cashiers[x].indecies[cashiers[x].queueLength] = customerId;
+    cashiers[x].queueLength++;
+    
+}
+
+// remove customer from cashier x
+void removeCustomerFromCashier(int customerId, int x, int y, int state) {
+      
+    customers[customerId].x = 0.0f;
+    customers[customerId].y = 0.0f;
+    // The customer left from the middle of the queue so we need to update the positions of the customers behind him
+    for (int i = 0; i < cashiers[x].queueLength; i++) {
+        if (cashiers[x].indecies[i] == customerId) {
+            for (int j = i; j < cashiers[x].queueLength - 1; j++) {
+                cashiers[x].indecies[j] = cashiers[x].indecies[j + 1];
+                // update the position of the customer
+                customers[cashiers[x].indecies[j]].x = 80.0f + j * 25.0f;
+                customers[cashiers[x].indecies[j]].y = 80.0f + x * 50.0f;
+            }
+            break;
+        }
+    }
+    cashiers[x].indecies[cashiers[x].queueLength - 1] = 0;
+    // remove customer from cashier x
+    cashiers[x].queueLength--;        
+    
 }
 
 
@@ -137,13 +275,9 @@ void drawCircle(float cx, float cy, float radius, int num_segments) {
 }
 
 void drawCashier(Cashier cashier) {
-    glColor3f(0.0, 0.0, 1.0);
+    glColor3f(cashier.a, cashier.b, cashier.c);
     drawRectangle(cashier.x, cashier.y, 20.0, 20.0); // Example size
 
-    glColor3f(1.0, 0.0, 0.0);
-    for (int i = 0; i < cashier.queueLength; i++) {
-        drawRectangle(cashier.x, cashier.y - (i + 1) * 25.0, 10.0, 10.0); // Smaller size for queue
-    }
 }
 
 void drawCustomer(Customer customer) {
@@ -151,29 +285,17 @@ void drawCustomer(Customer customer) {
     drawCircle(customer.x, customer.y, 10.0, 16); // Example radius and segment count
 }
 
-// Function to move a cashier to a specified aisle
-void moveToAisle(Cashier *cashier, int aisleIndex) {
-    // Define the positions of aisles
-    float aislePositions[3][2] = {
-        {100.0f, 100.0f}, // Aisle 1 position
-        {100.0f, 200.0f}, // Aisle 2 position
-        {100.0f, 300.0f}  // Aisle 3 position
-    };
-
-    // Check if the aisleIndex is within the valid range
-    if (aisleIndex >= 0 && aisleIndex < 3) {
-        // Update the cashier's position to the position of the specified aisle
-        cashier->x = aislePositions[aisleIndex][0];
-        cashier->y = aislePositions[aisleIndex][1];
-    } else {
-        // Handle invalid aisle index
-        printf("Invalid aisle index\n");
-    }
-}
-
 
 
 int main(int argc, char** argv) {
+
+    if (argc != 3) {
+        printf("Usage: ./gui <input_file>\n");
+        exit(1);
+    }
+    keyItemShm = atoi(argv[1]);
+    keyCashierShm = atoi(argv[2]);
+
     // Initialize GLUT
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
@@ -192,6 +314,10 @@ int main(int argc, char** argv) {
 
     // Register the idle function for continuous animation
     glutIdleFunc(displaySupermarket);
+
+    glutTimerFunc(1000 / 60, timerFunc, 0); // Start the timer for the first time
+
+
 
     // Enter the GLUT main loop
     glutMainLoop();

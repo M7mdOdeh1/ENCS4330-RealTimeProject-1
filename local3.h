@@ -19,8 +19,8 @@
 
 
 #define MAX_LINE_LENGTH 100
-#define MAX_ITEMS 20
-#define MAX_CUSTOMERS 100
+#define MAX_ITEMS 200
+#define MAX_CUSTOMERS 200
 #define MAX_CASHIERS 10
 
 

@@ -3,9 +3,14 @@ Customer.c
 */
 
 #include "local3.h"
+#include "local4.h"
 #define _XOPEN_SOURCE 500
-int isOnCashier = 0;
 
+
+int isOnCashier = 0;
+PositionUpdateMessage msg;
+key_t keyMsgQueue = 1234;
+int msgQueueId;
 
 
 int randomInRange(int min_range, int max_range) {
@@ -31,6 +36,22 @@ int main(int argc, char *argv[])
     	exit(-1);
      }
 
+    msgQueueId = msgget(keyMsgQueue, 0666 | IPC_CREAT);
+    if (msgQueueId == -1) {
+        perror("msgget");
+        return 1;
+    }
+    
+    msg.msgType = MSG_POS_UPDATE;
+    msg.id = 10 + cartID; // if id > 10 then it is a customer
+    msg.x = 0; // cashier index
+    msg.y = 0; // number in the queue
+    msg.state = 0; // State (0 = came new to the market)
+
+    if (msgsnd(msgQueueId, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+        perror("msgsnd");
+        return 1;
+    }
 
     // sleep for the time the customer is shopping
     printf("Customer %d is shopping for %d seconds\n", cartID, buyTime);
@@ -151,7 +172,6 @@ int main(int argc, char *argv[])
         exit(1);
     }
     
-
     // access the cashiers shared memory
     struct ALL_CASHIERS *memptr_cashiers;
     memptr_cashiers = (struct ALL_CASHIERS *) shmptr_cashier;
@@ -208,6 +228,16 @@ int main(int argc, char *argv[])
 
     // add the cart to the best line
     memptr_cashiers->cashiers[bestLineIndex].cartsQueue[memptr_cashiers->cashiers[bestLineIndex].tail] = cart;
+
+    msg.msgType = MSG_POS_UPDATE;
+    msg.id = 10 + cartID; // if id > 10 then it is a customer
+    msg.x = bestLineIndex; // cashier index
+    msg.y = memptr_cashiers->cashiers[bestLineIndex].numCustomers; // number in the queue
+    msg.state = 1; // State (1 = in queue)
+    if (msgsnd(msgQueueId, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+        perror("msgsnd");
+        return 1;
+    }
     
     // update the number of customers in the line
     memptr_cashiers->cashiers[bestLineIndex].numCustomers++;
@@ -261,10 +291,12 @@ int main(int argc, char *argv[])
 
         // acquire the semaphore
         acquireSem(semid, 1);
-
+        int ind = 0;
+        // the customer may be in the middle of the line, so we need to get the index of the customer in the line
         // get the index of the customer in the line and shift the carts in the line
         for (int i = 0; i < memptr_cashiers->cashiers[bestLineIndex].numCustomers; i++) {
             if (memptr_cashiers->cashiers[bestLineIndex].cartsQueue[i].customerPID == getpid()) {
+                ind = i;
                 // shift the carts in the line
                 for (int j = i; j < memptr_cashiers->cashiers[bestLineIndex].numCustomers; j++) {
                     memptr_cashiers->cashiers[bestLineIndex].cartsQueue[j] = memptr_cashiers->cashiers[bestLineIndex].cartsQueue[j + 1];
@@ -282,13 +314,22 @@ int main(int argc, char *argv[])
 
         printf("Customer %d is leaving the store without buying anything\n", cartID);
         fflush(stdout);
-       
+
+        msg.msgType = MSG_POS_UPDATE;
+        msg.id = 10 + cartID; // if id > 10 then it is a customer
+        msg.x = bestLineIndex; // cashier index
+        msg.y = ind; // number in the queue
+        msg.state = 2; // State (2 = left the line)
+
+        if (msgsnd(msgQueueId, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+            perror("msgsnd");
+            return 1;
+        }
         
         // The customer may be in the middle of the line, so we need to update the tail
         memptr_cashiers->cashiers[bestLineIndex].tail = (memptr_cashiers->cashiers[bestLineIndex].tail - 1) % MAX_CUSTOMERS;
 
         
-
 
         // acquire the semaphore
         acquireSem(semid, 0);
@@ -319,6 +360,17 @@ int main(int argc, char *argv[])
         pause();       
     }
     
+    msg.msgType = MSG_POS_UPDATE;
+    msg.id = 10 + cartID; // if id > 10 then it is a customer
+    msg.x = bestLineIndex; // cashier index
+    msg.y = 0; // number in the queue
+    msg.state = 2; // State (2 = left the line)
+
+    if (msgsnd(msgQueueId, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+        perror("msgsnd");
+        return 1;
+    }
+
     // exit the market
     printf("Customer %d is leaving the store after buying %d items\n", cartID, quantityOfItems);
     fflush(stdout);
