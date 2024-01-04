@@ -176,20 +176,31 @@ int main(int argc, char *argv[])
     struct ALL_CASHIERS *memptr_cashiers;
     memptr_cashiers = (struct ALL_CASHIERS *) shmptr_cashier;
     
-    // find the best line
+    // acqurie the semaphore
+    acquireSem(semid, 1);
+    
     int bestLineIndex = 0;
     int bestLineNumItemsWithScanTime = (1+memptr_cashiers->cashiers[0].numItemsInCarts) * memptr_cashiers->cashiers[0].scanTime;
     int bestLineLength = memptr_cashiers->cashiers[0].numCustomers;
     int bestLineBehavior = memptr_cashiers->cashiers[0].behavior;
 
+    //initially take the first active cashier as the best line
+    for (int i = 0; i < memptr_cashiers->numCashiers; i++) {
+        if (memptr_cashiers->cashiers[i].isActive == 1) {
+            bestLineIndex = i;
+            bestLineLength = memptr_cashiers->cashiers[i].numCustomers;
+            bestLineBehavior = memptr_cashiers->cashiers[i].behavior;
+            bestLineNumItemsWithScanTime = (1 +memptr_cashiers->cashiers[i].numItemsInCarts) * memptr_cashiers->cashiers[i].scanTime;
+            break;
+        }
+    }
     /* Check the best line queue according to this in order:
         - The line with less 'total items' and faster scanning time
         - Shortest length
         - Best behavior
     */ 
 
-    // acqurie the semaphore
-    acquireSem(semid, 1);
+    
     
     for (int i = 1; i < memptr_cashiers->numCashiers; i++) {
 

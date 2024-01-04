@@ -299,6 +299,17 @@ void moveQueueToOtherCashiers(){
                 }
             }
         }
+        msg.msgType = MSG_POS_UPDATE;
+        msg.id = memptr_cashiers->cashiers[cashier_index].cartsQueue[j].customerPID;
+        msg.x = cashier_index;
+        msg.y = min;
+        msg.state = 3; // indicate that the customer is in queue
+
+        // send the message to the gui process
+        if (msgsnd(msgQueueId, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+            perror("msgsnd -- cashier -- moveQueueToOtherCashiers");
+            exit(2);
+        }
 
         // move the customer to the cashier with the best queue
         memptr_cashiers->cashiers[min].cartsQueue[memptr_cashiers->cashiers[min].tail] = memptr_cashiers->cashiers[cashier_index].cartsQueue[j];

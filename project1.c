@@ -248,8 +248,14 @@ int main(int argc, char *argv[])
         perror("shmget for all cashiers failed");
         exit(EXIT_FAILURE);
     }
-    
 
+    // create a message queue
+    msgQueueId = msgget(keyMsgQueue, 0666 | IPC_CREAT);
+    if (msgQueueId == -1) {
+        perror("msgget");
+        return 1;
+    }
+    
     // attach to the shared memory segment
     shmptr_cashiers = (char *) shmat(shmid_cashiers, (char)0, 0);
     if (shmptr_cashiers== (char *) -1) {
@@ -315,10 +321,18 @@ int main(int argc, char *argv[])
     // copy the cashiers struct to the shared memory segment of all cashiers
     memcpy(shmptr_cashiers, (char *) &all_cashiers, sizeof(struct ALL_CASHIERS));
 
-    // print all_cashiers
-    for (int i = 0; i < all_cashiers.numCashiers; i++) {
-        printf("Cashier %d has %d customers\n", all_cashiers.cashiers[i].id, all_cashiers.cashiers[i].numCustomers);
+    
+    // print the scan time of each cashier to file overwriting the previous content
+    FILE *file3 = fopen("cashiersScanTimeOutput.txt", "w");
+    if (file3 == NULL) {
+        perror("Error opening the cashiers file");
+        return 1;
     }
+    printf("num cashiers %d\n", all_cashiers.numCashiers);
+    for (int i = 0; i < all_cashiers.numCashiers; i++) {
+        fprintf(file3, "Cashier %d is created with scan time %d\n", i, all_cashiers.cashiers[i].scanTime);
+    }
+    fclose(file3);
 
     // fork and exec opengl (gui) process
     gui_pid = fork();
@@ -340,27 +354,8 @@ int main(int argc, char *argv[])
         exit(6);
     }
 
-    msgQueueId = msgget(keyMsgQueue, 0666 | IPC_CREAT);
-    if (msgQueueId == -1) {
-        perror("msgget");
-        return 1;
-    }
     
-    // PositionUpdateMessage msg;
-    // msg.msgType = MSG_POS_UPDATE;
-    // msg.id = 0; // Assuming 0 is the ID for the first cashier
-    // msg.x = 100; // New X position
-    // msg.y = 100; // New Y position
-    // msg.state = 0; // State (not used in this example)
-
-    // if (msgsnd(msgQueueId, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
-    //     perror("msgsnd");
-    //     return 1;
-    // }
-
-
-   
-
+    
     // Customer Spawner
     cust_spawner_pid = fork();
     if (cust_spawner_pid == -1) {
@@ -520,7 +515,7 @@ void exitingProgram() {
 // Signal handler for SIGUSR1 to indicate that a cashier has left the market
 void catchSIGUSR1(int signo) {
     cahsiersLeftTheMarket++;
-    printf("left^^^^^^^^^^^^^^^^^^^^^^^^\n");
+    printf("^^^^^^^^^^Cashier_left^^^^^^^^^^%d^^^^^^^^^^^^^^\n", cahsiersLeftTheMarket);
     fflush(stdout);
     if(cahsiersLeftTheMarket == NUM_CASHIERS){
         printf("Behavior threshold of All Cashiers reached. Sending SIGINT to all cashiers\n");
@@ -552,9 +547,8 @@ void catchSIGUSR1(int signo) {
 
 // Signal handler for SIGUSR2 to indicate that a customer has left the market
 void catchSIGUSR2(int signo) {
-    printf("__________________________IMAPTIENT CUSTOMER________________\n");
+    printf("__________________________IMAPTIENT CUSTOMER_________%d_______\n", ++customersLeftTheMarket);
     fflush(stdout);
-    customersLeftTheMarket++;
     if(customersLeftTheMarket == CUST_IMPATIENT_TH ){
 
         struct ALL_CASHIERS *memptr_cashiers;

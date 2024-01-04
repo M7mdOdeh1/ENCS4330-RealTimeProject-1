@@ -184,8 +184,12 @@ void displaySupermarket() {
                 else if (msg.state == 1) {
                     addCustomerToCashier(customerId, msg.x, msg.y);
                 }
-                else {
+                else if (msg.state == 2) {
                     removeCustomerFromCashier(customerId, msg.x, msg.y, msg.state);
+                }
+                else if (msg.state == 3){
+                    removeCustomerFromCashier(customerId, msg.x, msg.y, msg.state);
+                    addCustomerToCashier(customerId, msg.y, msg.x);
                 }
 
             }
