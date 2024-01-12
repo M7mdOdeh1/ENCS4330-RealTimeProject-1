@@ -12,11 +12,12 @@ This application simulates a supermarket environment, focusing on interactions b
 
 ## Installation
 ```bash
-git clone [repository URL]
-cd [project directory]
-make
+git clone https://github.com/M7mdOdeh1/ENCS4330-RealTimeProject-1.git
+cd ENCS4330-RealTimeProject-1
+make all
 make run
 ```
+[Screencast from 01-13-2024 12:52:31 AM.webm](https://github.com/M7mdOdeh1/ENCS4330-RealTimeProject-1/assets/111658319/b58ce1f0-1631-447b-8ce6-047161c05bc0)
 
 ## Configuration
 Edit arguments.txt to adjust parameters like customer arrival rates and cashier behaviors.
@@ -28,6 +29,3 @@ Edit arguments.txt to adjust parameters like customer arrival rates and cashier 
 
 ## License
 This project is freely available under an open license for any use.
-
-
-[Screencast from 01-13-2024 12:52:31 AM.webm](https://github.com/M7mdOdeh1/ENCS4330-RealTimeProject-1/assets/111658319/b58ce1f0-1631-447b-8ce6-047161c05bc0)
