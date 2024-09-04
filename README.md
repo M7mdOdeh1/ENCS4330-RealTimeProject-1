@@ -1,4 +1,4 @@
-# Supermarket Cashier Simulation:
+# Supermarket Cashier Simulation
 
 ## Description
 This application simulates a supermarket environment, focusing on interactions between cashiers and customers using multi-processing techniques for a dynamic experience.
